@@ -1,6 +1,6 @@
 """Datos y cálculos comunes: descarga de precios, medias móviles y posición dentro/fuera.
 
-Lo usan el bot (bot/alertas.py) y los cuadernos de analisis/, así que las alertas
+Lo usan el bot (bot/alertas.py) y los análisis de analisis/, así que las alertas
 y el análisis histórico aplican exactamente las mismas reglas.
 
 Cada descarga se guarda también en datos/<ticker>_<periodo>.csv (carpeta ignorada
@@ -55,7 +55,7 @@ def _copia(ticker, periodo):
 
 
 def _descargar(ticker, periodo):
-    import yfinance as yf  # importación diferida: los cuadernos y pruebas pueden trabajar sin ella
+    import yfinance as yf  # importación diferida: los análisis y las pruebas pueden trabajar sin ella
     df = yf.download(ticker, period=periodo, auto_adjust=True, progress=False)
     cierres = df["Close"].squeeze().dropna()
     if not cierres.empty:

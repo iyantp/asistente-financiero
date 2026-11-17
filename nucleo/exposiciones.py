@@ -32,7 +32,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from nucleo.backtest import mco
+from nucleo.estadistica import mco
 from nucleo.datos import precios, variable
 from nucleo.rutas import MATRIZ
 from nucleo.universo import ACTIVOS, CESTAS, CORTE_REGIMEN, DIARIAS, INICIO, VARIABLES

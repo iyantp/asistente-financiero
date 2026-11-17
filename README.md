@@ -142,36 +142,20 @@ Licencia [MIT](LICENSE).
 
 ### A. Cómo se mide el efecto de las variables
 
-**En producción: la matriz de exposición** (`nucleo/exposiciones.py`, `python -m nucleo.exposiciones`). Las variables generales se definen en `control/variables.toml` y los factores específicos en `control/especificos.csv`. Para cada activo de la cartera y cada variable general, la matriz estima con datos semanales en euros cuánto se mueve el activo cuando la variable se mueve una desviación típica, en dos lecturas:
+**La matriz de exposición** (`nucleo/exposiciones.py`, `python -m nucleo.exposiciones`). Las variables generales se definen en `control/variables.toml` y los factores específicos en `control/especificos.csv`. Para cada activo de la cartera y cada variable general, la matriz estima con datos semanales en euros cuánto se mueve el activo cuando la variable se mueve una desviación típica, en dos lecturas:
 - **Efecto típico**, $\gamma_k$: regresión simple, que incluye cómo se mueven a la vez las demás variables. Es la que usa el resumen diario para las noticias.
 - **Exposición directa**, $\beta_k$: regresión múltiple, con las demás fijas. Es la que usa el informe semanal para atribuir la semana.
 
 Se relacionan por $\gamma_k = \sum_j \beta_j \rho_{jk}$. Inferencia: estadísticos $t$ de Newey-West, con un umbral de $|t| > 2{,}58$.
 
-**En construcción: un modelo de factores de riesgo** (`control/factores.toml`, `nucleo/factores.py`), al estilo de los modelos de Barra o del *Factor Lens* de Two Sigma. Cada activo se describe como
-
-$$r_{a,t} = \alpha_{a,t} + \sum_k \beta_{a,k,t}\, f_{k,t} + \varepsilon_{a,t},$$
-
-y de ahí sale también la correlación entre activos, $\Sigma = B\,\Omega\,B^\top + D$. Frente a la matriz:
-- **Factores negociables con dato diario** (ETF y diferencias entre ETF) en lugar de series macroeconómicas que se publican con retraso.
-- **Ortogonalización en un orden elegido** (Gram-Schmidt), para que factores solapados, como el euro y el dólar, no se repartan el mérito de forma inestable.
-- **Factores específicos** compartidos por las posiciones a las que explican y limpios de los generales. Si una posición tuviera su factor en exclusiva, la parte que comparte con otras quedaría como riesgo propio y se perdería su correlación (con el bitcoin y el ether, el modelo daría 0,12 en lugar del 0,79 real).
-- **Conversión de divisa exacta,** en vez de estimada como un factor más.
-- **Calendario común:** factores y activos se toman en las mismas sesiones; lo que cotiza en fin de semana (cripto) acumula esos días en el lunes en vez de perderlos.
-- **Exposiciones que cambian con el tiempo,** estimadas con medias exponenciales (vida media de un año). Fuera de muestra, explican el día siguiente mejor que unas $\beta$ fijas: el error sin explicar baja hasta un 20 % según el activo.
-
-Está pendiente contraer las estimaciones hacia valores de referencia, separar las correlaciones en calma y en tensión (VIX, MOVE y diferencial de crédito) y validar el modelo frente a lo que ocurre después.
-
 ### B. Decisiones de diseño
 
 - **El modelo de lenguaje clasifica; el código decide.** El resumen diario usa el modelo a temperatura 0, sin búsqueda web y sobre una lista cerrada de titulares; el modelo devuelve un JSON con la variable afectada, la dirección y el impacto de cada noticia. Una noticia solo pasa si su variable se ha movido de verdad ese día: el último cambio de su aproximación diaria debe cumplir $|z_t| \ge 1{,}5$, donde $z_t = (\Delta x_t - \overline{\Delta x})/s_{\Delta x}$ frente a las 252 sesiones anteriores. Además, su efecto típico sobre la cartera debe ser de al menos un 0,1 % por desviación típica. `python bot/diario.py --prueba 3` mide la consistencia de la clasificación.
 - **Independiente del proveedor de IA.** `bot/llm.py` habla con la API de Anthropic y con cualquier API compatible con la de OpenAI solo con `requests`.
-- **Validación de los datos, no solo del código.** Dos ejemplos:
-  - Yahoo fecha las velas de divisas al inicio del día en Londres, así que el EUR/USD del día $t$ es el de la noche de $t-1$: la correlación de los cambios con FRED es de 0,19 en la misma fecha y de 0,77 con la vela siguiente. Se corrige en `nucleo.datos.alinear_fx`.
-  - URTH (MSCI World) apenas se negoció en 2012–2014: 151 días sin cambio en 2012 y una correlación de 0,29 con el S&P 500. Sus datos solo se usan desde 2015.
+- **Datos alineados en el tiempo.** Yahoo fecha las velas de divisas al inicio del día en Londres, así que el EUR/USD del día $t$ corresponde a la noche de $t-1$. `nucleo.datos.alinear_fx` lo corrige antes de pasar los precios a euros, para no combinar el cierre de la bolsa de un día con el tipo de cambio del anterior.
 - **Medir si las alertas sirven.** Cada alerta y cada noticia clasificada, incluidas las descartadas como grupo de control, se guarda en `registro/decisiones.csv` con la dirección que se espera del precio. `analisis/evaluar_registro.py` mide después qué hizo el precio.
 - **Ideas antes que dinero.** La cartera sombra (`nucleo/sombra.py`) sigue ideas en simulación, con su regla de salida desde el primer día y costes reales de operar (`nucleo/costes.py`).
-- **Una sola fuente de verdad y comprobaciones de coherencia.** Cada dato de configuración vive en un solo sitio. `python -m nucleo.universo` comprueba que cartera, variables y matriz cuadran; las pruebas y el informe semanal comprueban además las reglas del bot.
+- **Una sola fuente de verdad y comprobaciones de coherencia.** Cada dato de configuración vive en un solo sitio. `python -m nucleo.universo` comprueba que cartera, perfil, variables, matriz y reglas del bot cuadran, y el workflow `matriz` lo repite en GitHub con cada cambio.
 - **Ejecución fiable.** El `schedule` de GitHub Actions retrasaba o saltaba ejecuciones, así que los workflows los lanza [cron-job.org](https://cron-job.org) por la API de GitHub, con un token de permisos mínimos. Las alertas avisan antes de que el token caduque.
 - **Reproducibilidad.** Versiones exactas en `requirements.lock`; pruebas sin red ni claves en cada push; modo `--demo`; modo sin conexión (`FINANZAS_SIN_RED=1`) con copias locales de los datos.
 
@@ -226,8 +210,7 @@ Las dependencias van en un solo sentido: `bot/` y `analisis/` usan `nucleo/`, y 
 
 ```
 ├── control/         tu configuración: cartera.csv (posiciones), cartera.md (tesis), perfil.toml (bloques, límites,
-│                    comisiones), variables.toml y especificos.csv (variables), calendario.csv (eventos),
-│                    factores.toml (modelo de factores, en construcción)
+│                    comisiones), variables.toml y especificos.csv (variables), calendario.csv (eventos)
 ├── bot/             programas que se ejecutan solos
 │   ├── config.py        reglas de alertas, cartera sombra, fuentes RSS y modelo de lenguaje
 │   ├── alertas.py · diario.py · informe.py
@@ -240,8 +223,7 @@ Las dependencias van en un solo sentido: `bot/` y `analisis/` usan `nucleo/`, y 
 │   ├── universo.py      lee cartera, variables y específicos; comprobación de coherencia
 │   ├── perfil.py        lee bloques, límites y comisiones
 │   ├── exposiciones.py  matriz de exposición (en producción)
-│   ├── factores.py      modelo de factores (en construcción)
-│   ├── sombra.py · limites.py · costes.py · registro.py · backtest.py
+│   ├── sombra.py · limites.py · costes.py · registro.py · estadistica.py
 │   └── rutas.py         único sitio con rutas de archivos
 ├── analisis/        matriz de exposición y evaluación del registro
 ├── registro/        lo que escribe el bot (aquí, vacío)

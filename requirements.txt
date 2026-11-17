@@ -2,5 +2,5 @@ yfinance
 requests
 python-dotenv
 tomli; python_version < "3.11"   # lectura de control/variables.toml en Python 3.10 (desde 3.11 viene incluida)
-# núcleo común (nucleo/) instalado en modo editable: los programas y cuadernos lo importan como `nucleo`
+# núcleo común (nucleo/) instalado en modo editable: los programas y los análisis lo importan como `nucleo`
 -e .

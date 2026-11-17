@@ -144,36 +144,20 @@ The code was written with AI assistance (Claude): the system design, the rules, 
 
 ### A. How the effect of the variables is measured
 
-**In production: the exposure matrix** (`nucleo/exposiciones.py`, `python -m nucleo.exposiciones`). The general variables are defined in `control/variables.toml`, and the specific factors in `control/especificos.csv`. For each portfolio asset and each general variable, the matrix estimates from weekly data in euros how much the asset moves when the variable moves by one standard deviation, in two readings:
+**The exposure matrix** (`nucleo/exposiciones.py`, `python -m nucleo.exposiciones`). The general variables are defined in `control/variables.toml`, and the specific factors in `control/especificos.csv`. For each portfolio asset and each general variable, the matrix estimates from weekly data in euros how much the asset moves when the variable moves by one standard deviation, in two readings:
 - **Typical effect**, $\gamma_k$: simple regression, including how the other variables usually move at the same time. The daily brief uses it for news.
 - **Direct exposure**, $\beta_k$: multiple regression, holding the others fixed. The weekly report uses it to attribute the week.
 
 They are related by $\gamma_k = \sum_j \beta_j \rho_{jk}$. Inference: Newey-West $t$-statistics, with a $|t| > 2.58$ threshold.
 
-**Under construction: a risk factor model** (`control/factores.toml`, `nucleo/factores.py`), in the style of Barra's models or Two Sigma's *Factor Lens*. Each asset is described as
-
-$$r_{a,t} = \alpha_{a,t} + \sum_k \beta_{a,k,t}\, f_{k,t} + \varepsilon_{a,t},$$
-
-which also gives the correlation between assets, $\Sigma = B\,\Omega\,B^\top + D$. Compared with the matrix:
-- **Tradable factors with daily data** (ETFs and differences between ETFs) instead of macroeconomic series published with a lag.
-- **Orthogonalisation in a chosen order** (Gram-Schmidt), so that overlapping factors, such as the euro and the dollar, do not split the credit unstably.
-- **Specific factors** shared by the positions they explain and cleaned of the general ones. If a position had its factor to itself, the part it shares with others would be left as its own risk and their correlation would be lost (for bitcoin and ether, the model would give 0.12 instead of the actual 0.79).
-- **Exact currency conversion,** instead of estimating it as one more factor.
-- **Common calendar:** factors and assets are sampled on the same sessions; whatever trades at weekends (crypto) accumulates those days into Monday instead of losing them.
-- **Time-varying exposures,** estimated with exponential weighting (one-year half-life). Out of sample they explain the next day better than fixed $\beta$s: the unexplained error falls by up to 20 % depending on the asset.
-
-Still to come: shrinking the estimates towards reference values, separating correlations in calm and stressed markets (VIX, MOVE and credit spread), and validating the model against what happens next.
-
 ### B. Design decisions
 
 - **The language model classifies; the code decides.** The daily brief runs the model at temperature 0, without web search and on a closed list of headlines; the model returns JSON with the affected variable, direction and impact of each story. A story only gets through if its variable actually moved that day: the latest change of its daily proxy must satisfy $|z_t| \ge 1.5$, where $z_t = (\Delta x_t - \overline{\Delta x})/s_{\Delta x}$ against the previous 252 sessions. Its typical effect on the portfolio must also be at least 0.1 % per standard deviation. `python bot/diario.py --prueba 3` measures how consistent the classification is.
 - **Independent of the AI provider.** `bot/llm.py` talks to the Anthropic API and to any OpenAI-compatible API using only `requests`.
-- **Validating the data, not just the code.** Two examples:
-  - Yahoo dates FX candles at the start of the London day, so the EUR/USD value for day $t$ is really that of the night of $t-1$: the correlation of daily changes with FRED is 0.19 on the same date and 0.77 with the next candle. This is fixed in `nucleo.datos.alinear_fx`.
-  - URTH (MSCI World) barely traded in 2012–2014: 151 unchanged days in 2012 and a 0.29 correlation with the S&P 500. Its data is only used from 2015.
+- **Data aligned in time.** Yahoo dates FX candles at the start of the London day, so the EUR/USD value for day $t$ is really that of the night of $t-1$. `nucleo.datos.alinear_fx` corrects this before converting prices to euros, so that one day's stock close is not combined with the previous day's exchange rate.
 - **Measuring whether alerts are useful.** Every alert and every classified story, including the discarded ones as a control group, is logged in `registro/decisiones.csv` with the expected direction of the price. `analisis/evaluar_registro.py` later measures what the price actually did.
 - **Ideas before money.** The shadow portfolio (`nucleo/sombra.py`) tracks ideas in simulation, with their exit rule from day one and real trading costs (`nucleo/costes.py`).
-- **A single source of truth and consistency checks.** Each piece of configuration lives in one place. `python -m nucleo.universo` checks that the portfolio, variables and matrix agree; the tests and the weekly report also check the bot's rules.
+- **A single source of truth and consistency checks.** Each piece of configuration lives in one place. `python -m nucleo.universo` checks that the portfolio, profile, variables, matrix and bot rules agree, and the `matriz` workflow repeats the check on GitHub with every change.
 - **Reliable execution.** GitHub Actions' `schedule` delayed or skipped runs, so the workflows are triggered by [cron-job.org](https://cron-job.org) through the GitHub API, with a minimum-permission token. The alerts warn before the token expires.
 - **Reproducibility.** Exact versions in `requirements.lock`; tests with no network or keys on every push; a `--demo` mode; an offline mode (`FINANZAS_SIN_RED=1`) with local copies of the data.
 
@@ -228,8 +212,7 @@ Dependencies go one way only: `bot/` and `analisis/` use `nucleo/`, and `nucleo/
 
 ```
 ├── control/         your configuration: cartera.csv (positions), cartera.md (theses), perfil.toml (blocks, limits,
-│                    commissions), variables.toml and especificos.csv (variables), calendario.csv (events),
-│                    factores.toml (factor model, under construction)
+│                    commissions), variables.toml and especificos.csv (variables), calendario.csv (events)
 ├── bot/             programs that run unattended
 │   ├── config.py        alert rules, shadow portfolio, RSS feeds and language model
 │   ├── alertas.py · diario.py · informe.py
@@ -242,8 +225,7 @@ Dependencies go one way only: `bot/` and `analisis/` use `nucleo/`, and `nucleo/
 │   ├── universo.py      reads the portfolio, variables and specific factors; consistency check
 │   ├── perfil.py        reads blocks, limits and commissions
 │   ├── exposiciones.py  exposure matrix (in production)
-│   ├── factores.py      factor model (under construction)
-│   ├── sombra.py · limites.py · costes.py · registro.py · backtest.py
+│   ├── sombra.py · limites.py · costes.py · registro.py · estadistica.py
 │   └── rutas.py         the only place with file paths
 ├── analisis/        exposure matrix and decision-log evaluation
 ├── registro/        what the bot writes (empty here)

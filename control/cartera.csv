@@ -1,5 +1,5 @@
 activo,bloque,peso,corto,ticker,divisa,aproximacion
-Renta variable mundial,nucleo,51.0,Mundial,URTH,EURUSD=X,ETF del MSCI World como aproximación a un fondo indexado mundial
+Renta variable mundial,nucleo,51.0,Mundial,ACWI,EURUSD=X,ETF del MSCI ACWI (desarrollados y emergentes) como aproximación a un fondo indexado mundial
 Pequeñas empresas EE. UU.,nucleo,5.0,Small caps,IWM,EURUSD=X,
 Bonos del Tesoro EE. UU.,nucleo,25.0,Bonos,IEF,EURUSD=X,bonos a 7-10 años
 Oro,nucleo,10.0,Oro,GLD,EURUSD=X,

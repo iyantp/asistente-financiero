@@ -134,7 +134,7 @@ def leer_matriz(ruta=None, columnas=("efecto_actual", "parcial_actual", "lectura
             "exposiciones.csv no corresponde a las variables de control/variables.toml o al código actual "
             f"(faltan columnas {faltan or '-'}; variables de más {sorted(sobran) or '-'}; "
             f"de menos {sorted(ausentes) or '-'}): regenera la matriz con python -m nucleo.exposiciones "
-            "(en un cuaderno, reinicia antes el núcleo)")
+            "(en Jupyter, reinicia antes el núcleo)")
     return exp
 
 

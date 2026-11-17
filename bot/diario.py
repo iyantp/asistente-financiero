@@ -9,7 +9,7 @@ Reparto de tareas para que el resultado sea consistente:
   posiciones afectadas, a partir de analisis/exposiciones.csv y cartera.csv:
   · usa el EFECTO TÍPICO de cada variable (regresión simple, incluye cómo se mueven a la vez las
     demás), no la exposición directa (que supone las demás variables quietas);
-  · comprueba con datos si la variable se movió de verdad (pasos 2 y 3 del protocolo): |z| del
+  · comprueba con datos si la variable se movió de verdad (condiciones 2 y 3 del filtro, ver README → «Por qué existe»): |z| del
     último cambio de su aproximación diaria (universo.DIARIAS) ≥ UMBRAL_Z; la dirección es la del
     dato. Si la variable no tiene dato diario, se usa la marca de sorpresa del modelo.
 Si algo falla (por ejemplo, sin saldo en la API), avisa por Telegram.
