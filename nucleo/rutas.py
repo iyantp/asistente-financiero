@@ -13,7 +13,8 @@ CARTERA = CONTROL / "cartera.md"
 CARTERA_CSV = CONTROL / "cartera.csv"          # registro único de posiciones: nombre, pesos, bloque, aproximación
 CARTERA_LOCAL = CONTROL / "cartera.local.md"   # importes; ignorado por git
 CALENDARIO = CONTROL / "calendario.csv"
-VARIABLES_TOML = CONTROL / "variables.toml"   # variables de estado, aproximaciones diarias, cestas y factores
+VARIABLES_TOML = CONTROL / "variables.toml"   # variables de estado, aproximaciones diarias, cestas y factores sectoriales
+FACTORES_TOML = CONTROL / "factores.toml"     # factores del modelo de riesgo (sustituirá a la matriz)
 
 # conocimiento/: marcos e investigación
 CONOCIMIENTO = RAIZ / "conocimiento"

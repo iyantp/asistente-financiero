@@ -382,6 +382,65 @@ def test_matriz_recupera_exposiciones_conocidas():
     assert set(m.columns) >= {"efecto_actual", "parcial_actual", "lectura", "lectura_parcial", "estable"}
 
 
+# --- modelo de factores (nucleo/factores.py) ---------------------------------------------------
+
+def test_ortogonalizar():
+    from nucleo import factores as fa
+    rng = np.random.default_rng(3)
+    idx = pd.bdate_range("2020-01-01", periods=500)
+    a = rng.standard_normal(500)
+    F = pd.DataFrame({"A": a, "B": 0.5 * a + rng.standard_normal(500)}, index=idx)   # B lleva medio A dentro
+    Fo, C, propia = fa.ortogonalizar(F)
+    assert np.allclose(Fo["A"], F["A"] - F["A"].mean())                              # el primero no cambia
+    assert abs(Fo.corr().loc["A", "B"]) < 1e-12                                      # quedan incorrelados
+    assert abs(C.loc["B", "A"] - 0.5) < 0.1 and propia["A"] == 1                      # recupera lo que había dentro
+    assert abs(propia["B"] - 1 / 1.25) < 0.1                                          # var propia 1 de 1,25
+    y = pd.Series(2 * F.A - F.B + 0.1 * rng.standard_normal(500), index=idx)
+    assert abs(fa.ajustar(y, F)[1] - fa.ajustar(y, Fo)[1]) < 1e-12                    # mismo R²
+    Fo2, _, _ = fa.ortogonalizar(F, ["B", "A"])                                      # el orden decide quién se
+    assert np.allclose(Fo2["B"], F["B"] - F["B"].mean())                             # queda la parte común
+
+
+def test_especificos_solo_recogen_lo_que_no_explican_los_generales():
+    from nucleo import factores as fa
+    rng = np.random.default_rng(4)
+    idx = pd.bdate_range("2020-01-01", periods=400)
+    g = pd.DataFrame({"G": rng.standard_normal(400)}, index=idx)
+    previo = fa.factores
+    fa.factores = lambda defs, todos=False, alternativas=False: (
+        pd.DataFrame({"S": 0.8 * g.G + rng.standard_normal(400)}, index=idx), {})
+    try:
+        E, _ = fa.especificos("X", g, definiciones={"S": {"tipo": "precio", "ticker": "S"}})
+    finally:
+        fa.factores = previo
+    assert abs(np.corrcoef(E["S"], g.G)[0, 1]) < 1e-12                               # limpio del general
+    assert fa.especificos("X", g, definiciones={})[0].empty                          # sin específicos, vacío
+
+
+def test_especificos_de_posiciones_reales():
+    from nucleo import factores as fa
+    assert fa.problemas_especificos() == []                                         # cada posición existe en cartera.csv
+
+
+def test_conversion_exacta():
+    from nucleo import factores as fa
+    idx = pd.bdate_range("2024-01-01", periods=6)
+    precio = pd.Series([100, 101, 99, 102, 103, 101.0], index=idx)              # en dólares
+    fx = pd.Series([1.10, 1.12, 1.08, 1.08, 1.11, 1.05], index=idx)             # dólares por euro
+    previo = (fa.precios, fa.cambio)
+    fa.precios = lambda t, d=None, periodo="2y": precio / fx if d else precio
+    fa.cambio = lambda d, periodo="max": fx
+    try:
+        activos = {"X": ("X", "EURUSD=X"), "Y": ("Y", None)}
+        Rl = fa.rentabilidades_activos(activos, moneda="local")
+        Ri = fa.rentabilidades_activos(activos, moneda="inversor")
+        K = fa.conversion_divisa(activos)
+    finally:
+        fa.precios, fa.cambio = previo
+    assert np.allclose((Rl + K - Ri).dropna(), 0)                                  # r_tuya = r_local + conversión
+    assert np.allclose(K["X"].dropna(), -np.log(fx).diff().dropna()) and (K["Y"] == 0).all()
+
+
 # --- proveedor del modelo de lenguaje (bot/llm.py) -------------------------------------------
 
 def test_llm_peticion_anthropic():
