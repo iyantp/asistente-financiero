@@ -1,0 +1,19 @@
+name: tests
+# Comprueba las reglas (tests/) en cada push que toque código o dependencias. Va aparte de los workflows del bot
+# para que un test roto no bloquee las alertas: el fallo se ve en Actions (y GitHub lo avisa por correo).
+on:
+  push:
+    paths: ["nucleo/**", "bot/**", "tests/**", "requirements.lock", "pyproject.toml"]
+  workflow_dispatch:
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: pip install -r requirements.lock -e . pytest
+      - run: python -m pytest -q tests

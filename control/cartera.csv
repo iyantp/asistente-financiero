@@ -1,0 +1,8 @@
+activo,bloque,peso,corto,ticker,divisa,aproximacion
+Vanguard U.S. 500,ahorro,40.0,Vanguard,SPY,EURUSD=X,
+Amundi MSCI World,ahorro,30.0,MSCI World,URTH,EURUSD=X,
+Fidelity Global Tech,ahorro,15.0,Tech,IXN,EURUSD=X,ETF de tecnología global como aproximación al fondo
+Bono EE. UU. 2035,ahorro,5.0,Bono,IEF,EURUSD=X,ETF de bonos de EE. UU. a 7-10 años
+ETH,cripto,3.0,ETH,ETH-USD,EURUSD=X,
+BTC (WBTC),cripto,3.0,BTC,BTC-USD,EURUSD=X,
+VanEck Rare Earth,especulacion,4.0,Tierras raras,REMX,EURUSD=X,versión estadounidense del ETF (más histórico)

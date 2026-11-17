@@ -1,0 +1,21 @@
+name: informe
+on:
+  # Lo lanza cron-job.org los lunes a las 06:40 (hora de Madrid) por la API (ver README). El schedule de
+  # GitHub se retrasaba horas o no se ejecutaba.
+  workflow_dispatch:
+jobs:
+  informe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      # Versiones fijadas (requirements.lock). Para actualizarlas, ver docs/bot.md → «Dependencias».
+      - run: pip install -r requirements.lock -e .
+      - run: python bot/informe.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

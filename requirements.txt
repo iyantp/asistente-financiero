@@ -1,0 +1,5 @@
+yfinance
+requests
+python-dotenv
+# núcleo común (nucleo/) instalado en modo editable: los programas y cuadernos lo importan como `nucleo`
+-e .
