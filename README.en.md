@@ -18,6 +18,16 @@ An assistant that watches your investments and messages you on Telegram **only w
 
 It started from two goals. First, to build my own alerts and notifications, tailored to what I find useful, without paying for a service. Second, to automate information: to receive only the news and data that affect what I hold.
 
+The second is the hard one. Financial news is a mess: dozens of items a day, many contradicting each other, almost all sounding important, and very few saying what they change for you. Is a rise in oil bad for an index fund? Is a more hawkish Federal Reserve bad for gold? It depends, and what it depends on is rarely explained.
+
+So the assistant does not decide on how striking a headline is. It asks three questions of each one:
+
+1. **Which market variable does it move?** Interest rates, the dollar, inflation, oil… An AI translates the headline into a variable and a direction. That is all the AI does.
+2. **Did it really move?** This is checked against the day's data: the news only counts if that variable moved well beyond normal. What the market already expected moves nothing, however loud it is.
+3. **Does it affect you?** Years of history measure how much each of your assets moves when that variable moves. If your portfolio does not react to it, the news is discarded.
+
+The last two questions are answered by data, not by the AI or by whoever wrote the article, so the filter is predictable and can be checked. Each item arrives with its reason (which variable, how much it moved, which of your positions rise or fall with it), and the loud headlines that get discarded are listed at the end with the reason ("the variable barely moved", "negligible effect on your portfolio"). Over time you also learn how the pieces of the market fit together. And everything is logged, including what was discarded, to measure over the months whether the filter gets it right.
+
 ## How it understands the market
 
 The assistant does not follow "all the news". It uses two kinds of variables:
@@ -124,7 +134,7 @@ The repository includes instructions for the AI ([`ia/asistente-financiero/SKILL
 
 ## Development
 
-Designed and directed by Iyán Tuñón Pérez, a mathematics student at the University of Oviedo (Spain). The code was written with AI assistance (Claude): the system design, the rules, the variable framework and the validation decisions are mine, and every change was checked with tests and real data before being used.
+The code was written with AI assistance (Claude): the system design, the rules, the variable framework and the validation decisions are mine, and every change was checked with tests and real data before being used.
 
 [MIT](LICENSE) license.
 

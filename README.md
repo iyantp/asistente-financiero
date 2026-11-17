@@ -18,6 +18,16 @@ Un asistente que vigila tus inversiones y te avisa por Telegram **solo cuando pa
 
 Partió de dos intenciones. Por un lado, programar por mi cuenta las alertas y los avisos que me parecieran convenientes, personalizados y sin pagar un servicio por ello. Por otro, automatizar la información: recibir solo las noticias y los datos que afectan a lo que tengo.
 
+La segunda es la difícil. Las noticias financieras son un lío: llegan a decenas cada día, muchas se contradicen, casi todas suenan importantes y muy pocas dicen qué cambian para ti. ¿Una subida del petróleo es mala para un fondo indexado? ¿Y una Reserva Federal más dura, para el oro? Depende, y casi nunca se explica de qué.
+
+Por eso el asistente no decide por lo llamativo de un titular, sino haciéndose tres preguntas con cada uno:
+
+1. **¿Qué variable del mercado mueve?** Tipos de interés, dólar, inflación, petróleo… Una IA traduce el titular a una variable y una dirección. Es lo único que hace la IA.
+2. **¿Se ha movido de verdad?** Se comprueba con los datos del día: la noticia solo cuenta si esa variable se ha movido bastante más de lo normal. Lo que el mercado ya esperaba no mueve nada, por mucho ruido que haga.
+3. **¿Te afecta a ti?** Con años de historia se mide cuánto se mueve cada uno de tus activos cuando se mueve esa variable. Si tu cartera no reacciona a ella, la noticia se descarta.
+
+Las dos últimas preguntas las responden los datos, no la IA ni la opinión de quien escribe la noticia, así que el filtro es predecible y se puede comprobar. Cada noticia llega con su porqué (qué variable, cuánto se ha movido, qué posiciones tuyas suben o bajan con ella) y los titulares sonados que se descartan aparecen al final con el motivo («la variable apenas se movió», «efecto en tu cartera despreciable»). Con el tiempo, además, se aprende cómo encajan las piezas del mercado. Y todo queda registrado, también lo descartado, para medir con los meses si el filtro acierta.
+
 ## Cómo entiende el mercado
 
 El asistente no sigue «todas las noticias». Usa dos tipos de variables:
@@ -122,7 +132,7 @@ El repositorio incluye instrucciones para la IA ([`ia/asistente-financiero/SKILL
 
 ## Desarrollo
 
-Diseñado y dirigido por Iyán Tuñón Pérez, estudiante de Matemáticas en la Universidad de Oviedo. El código se ha escrito con asistencia de IA (Claude): el diseño del sistema, las reglas, el marco de variables y las decisiones de validación son míos, y cada cambio se ha comprobado con pruebas y con datos reales antes de usarlo. El código está en español porque nació como herramienta de uso personal.
+El código se ha escrito con asistencia de IA (Claude): el diseño del sistema, las reglas, el marco de variables y las decisiones de validación son míos, y cada cambio se ha comprobado con pruebas y con datos reales antes de usarlo. El código está en español porque nació como herramienta de uso personal.
 
 Licencia [MIT](LICENSE).
 
