@@ -9,7 +9,7 @@ Qué hace cada programa y cómo montar tu propio bot. El mapa del repositorio es
 1. [Datos](#datos)
 2. [Alertas: reglas por activo](#alertas-reglas-por-activo)
 3. [Mensajes](#mensajes)
-4. [Variables de mercado y matriz de exposición](#variables-de-mercado-y-matriz-de-exposición)
+4. [Variables generales, factores específicos y matriz de exposición](#variables-generales-factores-específicos-y-matriz-de-exposición)
 5. [Informes](#informes)
 6. [Modelo de lenguaje](#modelo-de-lenguaje)
 7. [Disciplina: límites, registro y cartera sombra](#disciplina-límites-registro-y-cartera-sombra)
@@ -66,8 +66,8 @@ Activo("Oro", "GLD", seguimiento={"Corto": Cruce(6, 20), "Largo": Cruce(70, 200)
 Una posición con estrategia y salida previa:
 
 ```python
-Activo("Tierras raras (€)", "REMX", divisa="EURUSD=X",
-       senal=Cruce(6, 70), en_cartera="2026-06-01", posicion="VanEck Rare Earth",
+Activo("Litio y baterías (€)", "LIT", divisa="EURUSD=X",
+       senal=Cruce(6, 70), en_cartera="2026-06-01", posicion="Litio y baterías",
        alarma=Todas((No(Cruce(6, 70)), MinimoMovil(60))))
 ```
 
@@ -85,14 +85,17 @@ Activo("Tierras raras (€)", "REMX", divisa="EURUSD=X",
 - 🔑 **Renueva el token**: si configuras `TOKEN_CADUCA`, desde 14 días antes de que caduque.
 - ❌ **Error**: algo ha fallado; la ejecución queda en rojo en GitHub Actions.
 
-## Variables de mercado y matriz de exposición
+## Variables generales, factores específicos y matriz de exposición
 
-El método es fijo; las variables son configuración. En `control/variables.toml` se definen:
+El método es fijo; las variables son configuración. Hay dos capas:
+
+**Variables generales** (`control/variables.toml`), que mueven a todos los activos:
 
 - **`[variables]`**: las variables de estado, cada una con su fuente (`fred` o `yahoo`), su código, cómo se mide su cambio (`dif` para tipos y diferenciales, `log` para precios), si entra en la matriz y, opcionalmente, un nombre corto y qué significa que suba (se lo dice al modelo que clasifica noticias).
 - **`[diarias]`**: aproximaciones con dato diario fresco para comprobar si una variable se ha movido de verdad el día de una noticia (FRED publica con retraso). Pueden ser un ticker o una **cesta** (`[cestas]`: suma ponderada de cambios logarítmicos).
-- **`[factores]`**: activos de referencia que explican una posición mejor que las variables generales (por ejemplo, el litio para un ETF de tierras raras). Se siguen en el informe semanal y orientan el resumen diario.
 - **`[parametros]`**: inicio de la muestra y fecha de cambio de régimen.
+
+**Factores específicos** (`control/especificos.csv`): activos de referencia que explican una o pocas posiciones mejor que las variables generales. En el ejemplo, las mineras y la bolsa china para el ETF de litio, y el Nasdaq para el bitcoin. Es una tabla con tres columnas: `factor` (nombre), `ticker` (Yahoo Finance) y `posiciones` (las de `cartera.csv` a las que explica, separadas por `;`). Se siguen en el informe semanal y orientan el resumen diario: una noticia que mueve el factor afecta directamente a esas posiciones. Un mismo factor puede servir a varias posiciones.
 
 Con las variables, `python -m nucleo.exposiciones` calcula la **matriz de exposición** (`analisis/exposiciones.csv`): para cada activo de la cartera y cada variable, cuánto se mueve el activo en una semana cuando la variable se mueve una desviación típica. Da dos lecturas: el **efecto típico** (regresión simple, incluye cómo se mueven a la vez las demás variables; es lo que usa el resumen diario para las noticias) y la **exposición directa** (regresión múltiple, con las demás fijas; es lo que usa el informe semanal para atribuir la semana). El método completo está documentado en [`nucleo/exposiciones.py`](../nucleo/exposiciones.py).
 
@@ -105,7 +108,7 @@ Regenera la matriz al cambiar las variables o la cartera, y cada trimestre. `pyt
 | 📰 **Resumen diario** (`bot/diario.py`) | Titulares de las fuentes RSS de `config.FUENTES_RSS` desde el último cierre de Wall Street. El modelo (temperatura 0, sin búsqueda web) solo agrupa y clasifica por variable de estado; el código decide con reglas fijas: la variable debe haberse movido de verdad ($\lvert z \rvert \ge 1{,}5$ en su aproximación diaria; si no tiene dato diario, se usa la marca de sorpresa del modelo) y tener un efecto típico en la cartera de al menos un 0,1 % por desviación típica semanal. Hasta 3 noticias con su $z$, el efecto estimado en la cartera, las posiciones afectadas y las fuentes. Si la API falla (por ejemplo, sin saldo), avisa por Telegram. Prueba de consistencia: `python bot/diario.py --prueba 3`. |
 | 📊 **Informe semanal** (`bot/informe.py`) | Límites del perfil, cartera sombra, coherencia de la cartera (solo si algo no cuadra), variables destacadas (movimiento anómalo o nivel extremo en 5 años), qué parte de la semana de la cartera explica cada variable, factores sectoriales de cada posición y eventos de la semana (`control/calendario.csv`). Las series que aún no tienen dato de la semana (FRED publica con retraso) se indican y no entran en el cálculo. Solo cálculo, sin IA. |
 
-El marco de variables de estado, la matriz de exposición y el protocolo para filtrar noticias están en [`conocimiento/mercado.md`](../conocimiento/mercado.md).
+Las variables y la matriz se explican en [Variables generales, factores específicos y matriz de exposición](#variables-generales-factores-específicos-y-matriz-de-exposición); el resumen técnico, en el [apéndice del README](../README.md#apéndice-técnico).
 
 ## Modelo de lenguaje
 
@@ -140,14 +143,14 @@ El workflow `diario` pasa al programa los secrets `ANTHROPIC_API_KEY`, `OPENAI_A
 
 | Herramienta | Qué hace | Cómo se usa |
 |---|---|---|
-| **Límites** (`nucleo/limites.py`) | Compara los pesos de `control/cartera.csv` con los límites del perfil (cripto + especulación ≤ 15 %, ≤ 8 % por posición especulativa). Avisa «cerca» desde el 90 % del límite. | Sale en el informe semanal. En local, `python -m nucleo.limites "ETH=+1.5" "Vanguard U.S. 500=-1.5"` simula una operación antes de hacerla. |
+| **Límites** (`nucleo/limites.py`) | Compara los pesos de `control/cartera.csv` con los límites de `control/perfil.toml`: máximos para la suma de unos bloques, máximos por posición y mínimos (en el ejemplo, satélites ≤ 15 % y ≤ 5 % cada uno). Avisa «cerca» desde el 90 % del límite. | Sale en el informe semanal. En local, `python -m nucleo.limites "Bitcoin=+1" "Renta variable mundial=-1"` simula una operación antes de hacerla. |
 | **Registro de decisiones** (`nucleo/registro.py`) | Cada alerta y cada noticia del resumen diario (también las descartadas, como control) se anota con la dirección que se espera del precio, la variable y su $z$. | `python analisis/evaluar_registro.py`: qué hizo el precio después. Con pocas filas no se concluye nada. |
 | **Cartera sombra** (`nucleo/sombra.py`, `SOMBRA` en `bot/config.py`) | Sigue ideas sin dinero real, con su regla de salida desde el primer día: condición de `indicadores.py`, caída máxima desde el pico, `stop` (caída fija desde el precio de entrada) o plazo. Descuenta costes (`coste` es obligatorio). | Añadir `Sombra(...)` a `SOMBRA`; sale en el informe semanal. En local, `python bot/informe.py --sombra`. |
-| **Costes** (`nucleo/costes.py`) | Comisiones por plataforma (en el ejemplo: ETF al 0,12 %, mínimo 1 €, máximo 25 €, cambio de divisa 0,30 %; fondos sin comisión). | `python -m nucleo.costes 5000` o `python -m nucleo.costes 100 divisa`. |
+| **Costes** (`nucleo/costes.py`) | Comisiones por plataforma, configuradas en `control/perfil.toml` (en el ejemplo: ETF al 0,12 %, mínimo 1 €, máximo 25 €, cambio de divisa 0,30 %; fondos sin comisión). | `python -m nucleo.costes 5000` o `python -m nucleo.costes 100 divisa`. |
 
 ## Puesta en marcha paso a paso
 
-Antes de nada, prueba en local con `--demo` (ver el [README](../README.md#prueba-rápida)): imprime los mensajes en vez de enviarlos y no escribe en `registro/`.
+Antes de nada, prueba en local con `--demo` (ver el [README](../README.md#pruébalo)): imprime los mensajes en vez de enviarlos y no escribe en `registro/`.
 
 ### 1. Copia el repositorio
 
@@ -217,12 +220,12 @@ El `informe` puede ir cualquier día; resume la última semana completa. Horario
 
 | Si cambias… | Haz esto |
 |---|---|
-| Una posición | Su fila en `control/cartera.csv` (nombre, bloque, peso, nombre corto, ticker de Yahoo que la aproxima, divisa) y su estrategia en `control/cartera.md`. Después, `python -m nucleo.exposiciones` para regenerar la matriz. |
+| Una posición | Su fila en `control/cartera.csv` (nombre, bloque, peso, nombre corto, ticker de Yahoo que la aproxima, divisa: vacía si ya está en tu moneda) y su tesis en `control/cartera.md`. Después, `python -m nucleo.exposiciones` para regenerar la matriz. |
 | Una regla del bot | `bot/config.py` (con `posicion=` si es de una posición de la cartera). |
 | Un tipo de condición | Una clase en `nucleo/indicadores.py` con `serie()`, `describir()` y `sesiones`, y su prueba en `tests/`. |
-| Una variable de estado, una aproximación diaria o un factor sectorial | `control/variables.toml`; después, `python -m nucleo.exposiciones`. Conviene explicar por qué en `conocimiento/mercado.md`. |
-| Los límites del perfil | `nucleo/limites.py` y `control/perfil.md`. |
-| Las comisiones | `nucleo/costes.py`. |
+| Una variable general o una aproximación diaria | `control/variables.toml`; después, `python -m nucleo.exposiciones`. |
+| Un factor específico | Su fila en `control/especificos.csv`. |
+| Los bloques, los límites o las comisiones | `control/perfil.toml`. |
 | Fuentes de noticias | `FUENTES_RSS` en `bot/config.py`. |
 | El modelo de lenguaje | `DIARIO_*` en `bot/config.py` (ver [Modelo de lenguaje](#modelo-de-lenguaje)). |
 | Un archivo nuevo que lea el código | Su ruta en `nucleo/rutas.py`, y en ningún otro sitio. |

@@ -1,23 +1,21 @@
-"""Comprobación de los límites de perfil.md sobre los pesos de control/cartera.csv.
+"""Comprobación de los límites de riesgo de control/perfil.toml sobre los pesos de control/cartera.csv.
 
-Límites: cripto + especulación <= 15 % del total; cada posición especulativa <= 8 %;
-ahorro >= 85 % (es lo mismo que el primero). Avisa «cerca» a partir del 90 % del límite.
+Los límites, sus bloques y el aviso «cerca» se configuran en perfil.toml (sección [[limites]]):
+  maximo_conjunto  la suma de varios bloques no pasa de un valor (p. ej., cripto + especulación ≤ 15 %);
+  maximo_posicion  ninguna posición de esos bloques pasa de un valor (p. ej., cada especulación ≤ 8 %);
+  minimo_conjunto  la suma de esos bloques no baja de un valor (p. ej., ahorro ≥ 85 %).
 
 Uso en local:
     python -m nucleo.limites                           estado actual
-    python -m nucleo.limites "ETH=+1.5" "Vanguard U.S. 500=-1.5"
+    python -m nucleo.limites "<posición>=+1.5" "<otra posición>=-1.5"
         simula cambios en puntos de peso (se renormaliza a 100) antes de operar.
 """
 import sys
 
 import pandas as pd
 
+from nucleo import perfil
 from nucleo.rutas import CARTERA_CSV
-
-LIMITE_CONJUNTO = 15.0   # cripto + especulación
-LIMITE_POSICION = 8.0    # cada posición especulativa
-AHORRO_MINIMO = 85.0
-CERCA = 0.9              # fracción del límite a partir de la cual se avisa
 
 
 def cargar():
@@ -35,39 +33,54 @@ def aplicar(df, cambios):
     return df.reset_index()
 
 
-def calcular(df):
+def _etiqueta(lim, nombres):
+    n = [nombres.get(x, x) for x in lim["bloques"]]
+    return n[0] + "".join(" + " + x.lower() for x in n[1:])
+
+
+def calcular(df, lims=None):
+    """Una entrada por límite: {"limite", "valor"} y, en los de posición, "posicion" (la de más peso o None)."""
+    lims = perfil.limites() if lims is None else lims
     peso, bloque = df.set_index("activo")["peso"], df.set_index("activo")["bloque"]
-    esp = peso[bloque == "especulacion"]
-    return {
-        "conjunto": peso[bloque.isin(["cripto", "especulacion"])].sum(),
-        "ahorro": peso[bloque == "ahorro"].sum(),
-        "mayor": (esp.idxmax(), esp.max()) if len(esp) else (None, 0.0),
-    }
+    resultado = []
+    for lim in lims:
+        dentro = peso[bloque.isin(lim["bloques"])]
+        if lim["tipo"] == "maximo_posicion":
+            resultado.append({"limite": lim, "valor": dentro.max() if len(dentro) else 0.0,
+                              "posicion": dentro.idxmax() if len(dentro) else None})
+        else:
+            resultado.append({"limite": lim, "valor": dentro.sum()})
+    return resultado
 
 
-def _marca(valor, limite, minimo=False):
-    if minimo:  # el mínimo de ahorro es el complemento del límite conjunto: solo importa si se incumple
+def _marca(valor, limite, minimo=False, cerca=0.9):
+    if minimo:  # un mínimo solo importa si se incumple
         return "🚨 incumple" if valor < limite - 0.05 else "✅"
     if valor > limite + 0.05:
         return "🚨 supera"
     if valor >= limite - 0.05:
         return "⚠️ en el límite"
-    return "⚠️ cerca" if valor >= limite * CERCA - 1e-9 else "✅"
+    return "⚠️ cerca" if valor >= limite * cerca - 1e-9 else "✅"
 
 
 def _n(x):
     return f"{x:.1f}".replace(".", ",")
 
 
-def lineas(df):
-    r = calcular(df)
-    nombre, mayor = r["mayor"]
-    filas = [
-        f"· Cripto + especulación: {_n(r['conjunto'])} % de {_n(LIMITE_CONJUNTO)} % {_marca(r['conjunto'], LIMITE_CONJUNTO)}",
-        f"· Mayor especulación ({nombre}): {_n(mayor)} % de {_n(LIMITE_POSICION)} % {_marca(mayor, LIMITE_POSICION)}"
-        if nombre else "· Sin posiciones especulativas",
-        f"· Ahorro: {_n(r['ahorro'])} % (mínimo {_n(AHORRO_MINIMO)} %) {_marca(r['ahorro'], AHORRO_MINIMO, minimo=True)}",
-    ]
+def lineas(df, lims=None, nombres=None, cerca=None):
+    nombres = perfil.bloques() if nombres is None else nombres
+    cerca = perfil.aviso_cerca() if cerca is None else cerca
+    filas = []
+    for r in calcular(df, lims):
+        lim, v, valor = r["limite"], r["valor"], float(r["limite"]["valor"])
+        etiqueta = _etiqueta(lim, nombres)
+        if lim["tipo"] == "maximo_conjunto":
+            filas.append(f"· {etiqueta}: {_n(v)} % de {_n(valor)} % {_marca(v, valor, cerca=cerca)}")
+        elif lim["tipo"] == "maximo_posicion":
+            filas.append(f"· Mayor {etiqueta.lower()} ({r['posicion']}): {_n(v)} % de {_n(valor)} % "
+                         f"{_marca(v, valor, cerca=cerca)}" if r["posicion"] else f"· Sin posiciones de {etiqueta.lower()}")
+        else:
+            filas.append(f"· {etiqueta}: {_n(v)} % (mínimo {_n(valor)} %) {_marca(v, valor, minimo=True)}")
     return filas
 
 
@@ -88,6 +101,8 @@ def reparto(df):
 
 if __name__ == "__main__":
     df = cargar()
+    if (errores := perfil.problemas()):
+        sys.exit("\n".join(errores))
     print("Reparto (control/cartera.csv)\n" + "\n".join(reparto(df)) + "\n")
     print("Estado actual\n" + "\n".join(lineas(df)))
     if len(sys.argv) > 1:

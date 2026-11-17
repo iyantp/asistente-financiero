@@ -1,10 +1,10 @@
-# Variables de estado: el marco con el que el sistema lee el mercado.
+# Variables generales: el marco con el que el sistema lee el mercado.
 #
 # El MÉTODO es general: unas pocas variables que mueven a todos los activos; su efecto en cada posición se mide con
 # la matriz de exposición (python -m nucleo.exposiciones); el resumen diario solo deja pasar las noticias que mueven
 # de verdad una de ellas, y el informe semanal explica la semana de la cartera con ellas.
-# Las variables CONCRETAS de este archivo son una elección: cámbialas por las tuyas. Por qué se eligieron estas:
-# conocimiento/mercado.md.
+# Las variables CONCRETAS de este archivo son una elección: cámbialas por las tuyas. Los factores específicos de una
+# posición concreta (el litio para un ETF de tierras raras…) van en control/especificos.csv.
 #
 # Tras cambiar [variables] o la cartera, regenera la matriz:  python -m nucleo.exposiciones
 # Comprobación rápida de este archivo:  python -m nucleo.universo
@@ -150,21 +150,3 @@ signo = 1
 "CAD=X" = 0.183
 "JPY=X" = 0.085
 "GBPUSD=X" = -0.070   # dólares por libra
-
-
-# --- Factores sectoriales -----------------------------------------------------------------------------------------
-# Activos de referencia que explican una posición mejor que las variables de estado: la capa intermedia entre las
-# variables macro y cada activo (mercado → sector → activo). No entran en la matriz; se siguen en el informe semanal
-# y orientan el resumen diario (una noticia que mueve el factor afecta directamente a la posición).
-# [factores."<posición de control/cartera.csv>"]   nombre del factor = ticker de Yahoo
-
-[factores."VanEck Rare Earth"]
-"Baterías y litio" = "LIT"
-"Mineras globales" = "PICK"
-"Bolsa china" = "MCHI"
-
-[factores.ETH]                       # relación desde 2022
-"Nasdaq 100" = "QQQ"
-
-[factores."BTC (WBTC)"]              # relación desde 2022
-"Nasdaq 100" = "QQQ"

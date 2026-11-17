@@ -258,7 +258,7 @@ def exposicion():
 
 
 def evaluar(n, exp, pesos, zvar):
-    """Reglas fijas (protocolo de mercado.md). Relevante si:
+    """Reglas fijas (protocolo de noticias: ver docs/bot.md, «Informes»). Relevante si:
     a) mueve una variable a la que la cartera reacciona (efecto típico significativo) y la variable se
        movió de verdad (|z| ≥ UMBRAL_Z en su aproximación diaria; sin dato diario, sorpresa según el modelo), o
     b) afecta directamente a una posición de la cartera y es de impacto alto.

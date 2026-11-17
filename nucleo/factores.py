@@ -2,7 +2,7 @@
 
 Los factores se definen en control/factores.toml. Aquí:
 - `factores()` construye la serie diaria de cada factor general (rentabilidad o cambio al cierre de EE. UU.);
-- `especificos()` construye los de una posición concreta, limpios de los generales;
+- `especificos()` construye los de una posición concreta (control/especificos.csv), limpios de los generales;
 - `ortogonalizar()` los limpia en orden: el primero queda igual y cada siguiente se queda solo con la parte que
   no explican los anteriores (Gram-Schmidt con regresiones). Devuelve también los coeficientes de esa limpieza y
   qué fracción de cada factor es «nueva», para ver qué aporta cada uno;
@@ -23,7 +23,7 @@ import pandas as pd
 
 from nucleo.datos import _cierres, alinear_fx, cambio, cambio_eurusd, precios, variable
 from nucleo.rutas import FACTORES_TOML
-from nucleo.universo import ACTIVOS, CESTAS
+from nucleo.universo import ACTIVOS, CESTAS, ESPECIFICOS
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -57,6 +57,9 @@ def conversion(ruta=FACTORES_TOML):
     c = parametros(ruta).get("conversion", "exacta")
     if c not in ("exacta", "estimada"):
         raise ValueError(f"conversion = {c!r} no válida (\"exacta\" o \"estimada\")")
+    if c == "estimada" and not any(d.get("tipo") == "eurusd" and d.get("usar", True)
+                                   for d in leer_definiciones(ruta).values()):
+        raise ValueError('conversion = "estimada" necesita un factor de divisa (tipo = "eurusd") con usar = true')
     return c
 
 
@@ -110,17 +113,15 @@ def factores(definiciones=None, todos=False, alternativas=False):
     return pd.DataFrame(series), avisos
 
 
-def leer_especificos(ruta=FACTORES_TOML):
-    """{posición: {factor: definición}} de [especificos] (factores que solo se usan para esa posición)."""
-    return _leer(ruta).get("especificos", {})
-
-
 def especificos(activo, generales, definiciones=None, alternativas=False):
-    """Factores específicos de `activo`, limpios de los generales: (DataFrame, avisos).
+    """Factores específicos de `activo` (control/especificos.csv), limpios de los generales: (DataFrame, avisos).
 
-    Se ortogonalizan detrás de todos los generales (y entre sí, en su orden), así que solo recogen lo que los
-    generales no explican. Sin específicos, DataFrame vacío."""
-    definiciones = leer_especificos().get(activo, {}) if definiciones is None else definiciones
+    Se ortogonalizan detrás de todos los generales (y entre sí, en el orden del archivo), así que solo recogen lo
+    que los generales no explican. Un mismo específico puede servir a varias posiciones (p. ej., el bitcoin al ether
+    y al propio bitcoin): así el modelo ve que esas posiciones se mueven juntas. Sin específicos, DataFrame vacío."""
+    if definiciones is None:
+        definiciones = {e["factor"]: {"tipo": "precio", "ticker": e["ticker"]}
+                        for e in ESPECIFICOS if activo in e["posiciones"]}
     if not definiciones:
         return pd.DataFrame(index=generales.index), {}
     E, avisos = factores(definiciones, todos=True, alternativas=alternativas)
@@ -128,13 +129,6 @@ def especificos(activo, generales, definiciones=None, alternativas=False):
         return E, avisos
     Fo, _, _ = ortogonalizar(pd.concat([generales, E], axis=1, sort=True), list(generales.columns) + list(E.columns))
     return Fo[list(E.columns)], avisos
-
-
-def problemas_especificos(activos=None, ruta=FACTORES_TOML):
-    """Posiciones de [especificos] que no están en control/cartera.csv. Lista vacía = todo bien."""
-    activos = ACTIVOS if activos is None else activos
-    return [f"factores.toml: [especificos] tiene {a!r}, que no está en cartera.csv"
-            for a in leer_especificos(ruta) if a not in activos]
 
 
 def rentabilidades_activos(activos=None, moneda="inversor"):

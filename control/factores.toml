@@ -1,11 +1,13 @@
 # Factores del modelo de riesgo: qué fuerzas mueven a los activos (sustituirá a la matriz de exposición).
 #
 # Dos capas:
-#   [factores]     GENERALES: mueven a todos los activos (bolsa, tipos, crédito, inflación, dólar, materias primas…).
+#   GENERALES (este archivo): mueven a todos los activos (bolsa, tipos, crédito, inflación, dólar, materias primas…).
 #                  Todos los activos se miden frente a todos ellos.
-#   [especificos]  ESPECÍFICOS de una posición concreta: lo que explica a un activo y no a los demás (el litio para un
-#                  ETF de tierras raras, el bitcoin para el ether). Solo se usan para esa posición y solo recogen lo
-#                  que los generales no explican (se limpian de ellos antes de usarlos).
+#   ESPECÍFICOS (control/especificos.csv): explican a una o pocas posiciones concretas (el litio para un ETF de
+#                  tierras raras, el bitcoin para el ether y el propio bitcoin). Solo se usan para esas posiciones y
+#                  solo recogen lo que los generales no explican (se limpian de ellos antes de usarlos). Un específico
+#                  se comparte entre todas las posiciones que explica: así el modelo ve que esas posiciones se mueven
+#                  juntas (si no, esa parte común quedaría como riesgo propio de cada una y se perdería).
 #
 # Un factor es una serie DIARIA de rentabilidades (o de cambios) que se puede observar al cierre de cada sesión:
 # carteras que cotizan (un ETF, la diferencia entre dos ETF) mejor que series macro, que se publican con retraso.
@@ -15,8 +17,8 @@
 #   1. Qué factores se usan:  usar = true / false.
 #   2. En qué ORDEN se ortogonalizan: el orden de este archivo. El primero queda tal cual; cada siguiente se limpia
 #      de lo que ya explican los anteriores, así que su β mide «lo que aporta además de los anteriores».
-#      Orden elegido: lo más general primero (bolsa, tipos, crédito, inflación, dólar), luego materias primas,
-#      regiones y estilos. Los específicos de cada posición van después de todos los generales, en su propio orden.
+#      Orden elegido: lo más general primero (bolsa, tipos, crédito, inflación, dólar), luego materias primas y
+#      estilos. Los específicos van después de todos los generales, en el orden de especificos.csv.
 #
 # Tipos de factor:
 #   precio       rentabilidad logarítmica diaria de `ticker`
@@ -30,9 +32,11 @@
 #   `desde` limita la alternativa a las fechas en que sus datos son buenos.
 
 [parametros]
-# Inicio de la muestra. ACWI (bolsa mundial) cotiza desde marzo de 2008: así entra la crisis financiera, que importa
-# para estudiar las correlaciones en tensión. El modelo usa las fechas en que existen TODOS los factores generales
-# (con China, MCHI, desde abril de 2011); los específicos de una posición solo limitan las fechas de esa posición.
+# Inicio de la muestra. El modelo usa las fechas en que existen TODOS los factores generales: con ACWI (bolsa mundial,
+# desde marzo de 2008) y los demás de este archivo, desde julio de 2008, con la crisis financiera dentro (importa para
+# estudiar las correlaciones en tensión). Un general nuevo con menos historia recorta la muestra de todos: por eso los
+# que solo explican a unos pocos activos (China, sectores, cripto) van como específicos, que solo limitan las fechas
+# de sus posiciones.
 inicio = "2008-07-01"
 # Conversión a la moneda del inversor (qué divisa usa cada activo: columna `divisa` de control/cartera.csv; vacía si el
 # activo ya está en tu moneda):
@@ -97,12 +101,6 @@ ticker = "GLD"
 usar = true
 que = "oro"
 
-[factores.China]
-tipo = "precio"
-ticker = "MCHI"
-usar = true
-que = "bolsa china"
-
 [factores."Tecnología"]
 tipo = "diferencial"
 largo = "QQQ"                   # Nasdaq 100
@@ -116,20 +114,3 @@ que = "estilo: tecnología frente al mercado"
 tipo = "eurusd"
 usar = false
 que = "euro frente al dólar (sube = euro fuerte)"
-
-
-# --- Específicos: [especificos."<posición de control/cartera.csv>".<nombre del factor>] ---------------------------------
-# Misma forma que los generales (tipo, ticker…). Ejemplos: el ETF de tierras raras se mueve sobre todo con el litio y
-# las mineras; el ether, con el bitcoin. (El bitcoin no lleva específico: sería él mismo.)
-
-[especificos."VanEck Rare Earth"."Litio y baterías"]
-tipo = "precio"
-ticker = "LIT"
-
-[especificos."VanEck Rare Earth".Mineras]
-tipo = "precio"
-ticker = "PICK"
-
-[especificos.ETH.Bitcoin]
-tipo = "precio"
-ticker = "BTC-USD"

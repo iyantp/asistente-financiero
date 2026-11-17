@@ -142,24 +142,44 @@ def test_sombra_senal_sale_en_el_primer_cruce_a_la_baja():
 
 # --- limites.py y costes.py -------------------------------------------------------
 
+LIMITES_PRUEBA = [{"tipo": "maximo_conjunto", "bloques": ["cripto", "especulacion"], "valor": 15},
+                  {"tipo": "maximo_posicion", "bloques": ["especulacion"], "valor": 8},
+                  {"tipo": "minimo_conjunto", "bloques": ["ahorro"], "valor": 85}]
+NOMBRES_PRUEBA = {"ahorro": "Ahorro", "cripto": "Cripto", "especulacion": "Especulación"}
+
+
 def test_limites():
     df = pd.DataFrame({"activo": ["A", "B", "C"], "peso": [86.0, 8.5, 5.5], "bloque": ["ahorro", "especulacion", "cripto"]})
-    r = limites.calcular(df)
-    assert abs(r["conjunto"] - 14.0) < 1e-9 and r["mayor"] == ("B", 8.5)
-    texto = "\n".join(limites.lineas(df))
-    assert "🚨 supera" in texto                                       # 8,5 % > 8 % por posición
+    r = limites.calcular(df, LIMITES_PRUEBA)
+    assert abs(r[0]["valor"] - 14.0) < 1e-9 and (r[1]["posicion"], r[1]["valor"]) == ("B", 8.5)
+    texto = "\n".join(limites.lineas(df, LIMITES_PRUEBA, NOMBRES_PRUEBA, 0.9))
+    assert "· Cripto + especulación: 14,0 % de 15,0 % ⚠️ cerca" in texto
+    assert "· Mayor especulación (B): 8,5 % de 8,0 % 🚨 supera" in texto
+    assert "· Ahorro: 86,0 % (mínimo 85,0 %) ✅" in texto
     nuevo = limites.aplicar(df, {"A": -1.0, "C": +1.0})
-    assert abs(nuevo["peso"].sum() - 100) < 1e-9 and abs(limites.calcular(nuevo)["conjunto"] - 15.0) < 1e-9
+    assert abs(nuevo["peso"].sum() - 100) < 1e-9 and abs(limites.calcular(nuevo, LIMITES_PRUEBA)[0]["valor"] - 15.0) < 1e-9
 
 
-def test_costes_myinvestor_etf():
-    assert costes.comision("myinvestor_etf", 100) == 1.0              # mínimo 1 €
-    assert abs(costes.comision("myinvestor_etf", 5000) - 6.0) < 1e-9  # 0,12 %
-    assert costes.comision("myinvestor_etf", 50000) == 25.0           # máximo 25 €
-    assert abs(costes.comision("myinvestor_etf", 5000, divisa_ajena=True) - 21.0) < 1e-9   # +0,30 % = 15 €
-    euros, frac = costes.ida_y_vuelta("myinvestor_etf", 5000)
-    assert abs(euros - 12.0) < 1e-9 and abs(frac - 0.0024) < 1e-12
-    assert costes.ida_y_vuelta("myinvestor_fondo", 1000) == (0.0, 0.0)
+def test_perfil_detecta_errores():
+    from nucleo import perfil
+    malo = {"bloques": {"a": "A"}, "limites": [{"tipo": "maximo_raro", "bloques": ["b"], "valor": "x"}],
+            "comisiones": {"p": {"porcentaje": "mucho"}}}
+    p = " | ".join(perfil.problemas(malo))
+    for texto in ["tipo 'maximo_raro'", "bloques que no están", "no tiene `valor`", "'p' tiene valores no numéricos"]:
+        assert texto in p, (texto, p)
+    assert perfil.problemas() == []                                   # el perfil real está bien escrito
+
+
+def test_costes():
+    etf = {"porcentaje": 0.0012, "minimo": 1.0, "maximo": 25.0, "cambio_divisa": 0.0030}
+    assert costes.comision(etf, 100) == 1.0                           # mínimo
+    assert abs(costes.comision(etf, 5000) - 6.0) < 1e-9               # 0,12 %
+    assert costes.comision(etf, 50000) == 25.0                        # máximo
+    assert abs(costes.comision(etf, 5000, divisa_ajena=True) - 21.0) < 1e-9   # +0,30 % = 15
+    coste, frac = costes.ida_y_vuelta(etf, 5000)
+    assert abs(coste - 12.0) < 1e-9 and abs(frac - 0.0024) < 1e-12
+    assert costes.ida_y_vuelta({"porcentaje": 0.0}, 1000) == (0.0, 0.0)
+    assert costes.comision("x", 100, tarifas={"x": {"porcentaje": 0.01}}) == 1.0    # por nombre, sin máximo
 
 
 # --- datos.py: alineación del tipo de cambio -----------------------------------------
@@ -272,7 +292,7 @@ def _caida(n_plano=150, n_sube=40, n_baja=60):
     return serie([100.0] * n_plano + list(np.linspace(100, 130, n_sube)) + list(np.linspace(130, 80, n_baja)))
 
 
-def test_salida_previa_russell_igual_que_calculo_independiente():
+def test_salida_previa_igual_que_calculo_independiente():
     p = _caida()
     cond = Todas((No(Cruce(6, 70)), MinimoMovil(60)))
     s = cond.serie(p)
@@ -299,7 +319,7 @@ def test_alarma_de_posicion_solo_vale_dentro(monkeypatch=None):
     fuera = Activo("T", "T", senal=Cruce(6, 70), en_cartera=str((cruce_baja - pd.Timedelta(days=20)).date()), alarma=alarma)
     e = alertas.evaluar(fuera, hoy)
     assert e["estado"] == "salida" and e["alarma"] is None and e["alarma_cambio"] is None
-    # Sin posición (como la alarma del S&P 500): la alarma funciona siempre.
+    # Sin posición: la alarma funciona siempre.
     sin = Activo("T", "T", alarma=alarma)
     assert alertas.evaluar(sin, hoy)["alarma"] is True
 
@@ -417,9 +437,28 @@ def test_especificos_solo_recogen_lo_que_no_explican_los_generales():
     assert fa.especificos("X", g, definiciones={})[0].empty                          # sin específicos, vacío
 
 
-def test_especificos_de_posiciones_reales():
+def test_especifico_compartido_conserva_la_correlacion():
+    """Si dos posiciones comparten un específico, el modelo reproduce su correlación; si solo lo tiene una, se pierde
+    (la parte común queda como riesgo propio, que el modelo trata como independiente)."""
     from nucleo import factores as fa
-    assert fa.problemas_especificos() == []                                         # cada posición existe en cartera.csv
+    rng = np.random.default_rng(5)
+    n = 3000
+    g = pd.DataFrame({"G": rng.standard_normal(n)})
+    comun = rng.standard_normal(n)                                     # p. ej., el bitcoin
+    y = pd.DataFrame({"X": 0.3 * g.G + comun + 0.3 * rng.standard_normal(n),
+                      "Y": 0.2 * g.G + comun + 0.3 * rng.standard_normal(n)})
+    Fo, _, _ = fa.ortogonalizar(pd.concat([g, pd.Series(comun, name="S")], axis=1))
+
+    def correlacion_modelo(cols_x, cols_y):
+        B = pd.DataFrame({a: fa.ajustar(y[a], Fo[c])[0].reindex(Fo.columns).fillna(0) for a, c in
+                          (("X", cols_x), ("Y", cols_y))})
+        D = np.diag([(y[a] - Fo @ B[a]).var() for a in "XY"])
+        S = B.T.values @ Fo.cov().values @ B.values + D
+        return S[0, 1] / np.sqrt(S[0, 0] * S[1, 1])
+
+    real = y.corr().loc["X", "Y"]
+    assert abs(correlacion_modelo(["G", "S"], ["G", "S"]) - real) < 0.02           # compartido: la reproduce
+    assert correlacion_modelo(["G", "S"], ["G"]) < real - 0.5                       # solo en X: se pierde
 
 
 def test_conversion_exacta():

@@ -21,7 +21,7 @@ class Sombra:
     `caida_max` (caída desde el máximo alcanzado desde la entrada, 0,15 = 15 %), `stop` (caída desde el PRECIO
     DE ENTRADA, 0,12 = 12 %; no sube con el precio) o `plazo` (sesiones).
     Hace falta al menos una. `coste` es OBLIGATORIO: coste de ida y vuelta (comisión, cambio de divisa y
-    diferencial) en tanto por uno; sácalo de nucleo/costes.py / control/perfil.md, no lo estimes a ojo.
+    diferencial) en tanto por uno; sácalo de python -m nucleo.costes (comisiones de control/perfil.toml), no lo estimes a ojo.
     """
     nombre: str
     ticker: str
@@ -41,7 +41,7 @@ def evaluar(s: Sombra, precio: pd.Series, retraso=1):
     if not (s.salida or s.senal or s.caida_max or s.stop or s.plazo):
         raise ValueError(f"{s.nombre}: toda posición necesita al menos una condición de salida")
     if s.coste is None:
-        raise ValueError(f"{s.nombre}: indica el coste de ida y vuelta (ver nucleo/costes.py y control/perfil.md, «Comisiones»)")
+        raise ValueError(f"{s.nombre}: indica el coste de ida y vuelta (python -m nucleo.costes, con las comisiones de control/perfil.toml)")
     desde = precio[precio.index >= pd.Timestamp(s.entrada)]
     if desde.empty:
         return {"nombre": s.nombre, "estado": "pendiente"}

@@ -23,7 +23,7 @@ It started from two goals. First, to build my own alerts and notifications, tail
 The assistant does not follow "all the news". It uses two kinds of variables:
 
 - **General variables**, which move every asset: the world stock market, interest rates, credit, inflation, the dollar, commodities…
-- **Specific variables** for a particular asset, covering what the general ones miss: lithium and miners for a rare-earths fund, or bitcoin for ether.
+- **Specific variables** for one or a few particular assets, covering what the general ones miss: miners and the Chinese stock market for a lithium fund, or the Nasdaq for bitcoin.
 
 Using historical data, it measures how much each of your assets moves when each variable moves. That gives three things:
 - **Which news affects you:** a story only gets through if it moves a variable that moves your portfolio, and if that variable actually moved.
@@ -54,12 +54,13 @@ Code, configuration and messages are in Spanish, as it started as a personal too
 
 | What | Where |
 |---|---|
-| Your portfolio: positions, weights and the currency of each | `control/cartera.csv` (and your notes in `control/cartera.md`) |
+| Your portfolio: positions, weights and the currency of each | `control/cartera.csv` (a table: edit it in Excel or any editor) |
+| Your theses and exit conditions, in free text (the news brief takes them into account) | `control/cartera.md` |
 | Your alert rules | `bot/config.py` |
 | Your news sources | `bot/config.py` (`FUENTES_RSS`) |
 | The AI provider (Anthropic, OpenAI, Gemini, a model on your computer…) | `bot/config.py` (`DIARIO_*`) |
-| Your market variables | `control/variables.toml` |
-| Your risk limits | `control/perfil.md` and `nucleo/limites.py` |
+| Your market variables: general ones and those specific to an asset | `control/variables.toml` and `control/especificos.csv` |
+| Your portfolio blocks, risk limits and broker commissions | `control/perfil.toml` |
 | The week's events (Fed, ECB, CPI…) | `control/calendario.csv` |
 | When each message arrives | Whichever scheduler you use (see the guide) |
 
@@ -105,7 +106,7 @@ Designed and directed by Iyán Tuñón Pérez, a mathematics student at the Univ
 
 ### A. How the effect of the variables is measured
 
-**In production: the exposure matrix** (`nucleo/exposiciones.py`, `python -m nucleo.exposiciones`). The general variables are defined in `control/variables.toml`, and the specific ones in its `[factores]` section. For each portfolio asset and each general variable, the matrix estimates from weekly data in euros how much the asset moves when the variable moves by one standard deviation, in two readings:
+**In production: the exposure matrix** (`nucleo/exposiciones.py`, `python -m nucleo.exposiciones`). The general variables are defined in `control/variables.toml`, and the specific factors in `control/especificos.csv`. For each portfolio asset and each general variable, the matrix estimates from weekly data in euros how much the asset moves when the variable moves by one standard deviation, in two readings:
 - **Typical effect**, $\gamma_k$: simple regression, including how the other variables usually move at the same time. The daily brief uses it for news.
 - **Direct exposure**, $\beta_k$: multiple regression, holding the others fixed. The weekly report uses it to attribute the week.
 
@@ -118,7 +119,7 @@ $$r_{a,t} = \alpha_a + \sum_k \beta_{a,k}\, f_{k,t} + \varepsilon_{a,t},$$
 which also gives the correlation between assets, $\Sigma = B\,\Omega\,B^\top + D$. Compared with the matrix:
 - **Tradable factors with daily data** (ETFs and differences between ETFs) instead of macroeconomic series published with a lag.
 - **Orthogonalisation in a chosen order** (Gram-Schmidt), so that overlapping factors, such as the euro and the dollar, do not split the credit unstably.
-- **Specific factors** for each position, cleaned of the general ones.
+- **Specific factors** shared by the positions they explain and cleaned of the general ones. If a position had its factor to itself, the part it shares with others would be left as its own risk and their correlation would be lost (for bitcoin and ether, the model would give 0.13 instead of the actual 0.82).
 - **Exact currency conversion,** instead of estimating it as one more factor.
 
 Still to come: time-varying exposures, shrinking the estimates towards reference values, separating correlations in calm and stressed markets (VIX, MOVE and credit spread), and validating the model against what happens next.
@@ -148,8 +149,8 @@ flowchart LR
     end
     subgraph CFG[Your configuration]
         direction TB
-        CA[control/cartera.csv · cartera.md<br/>positions, weights and theses]
-        VA[control/variables.toml<br/>general and specific variables]
+        CA[control/cartera.csv · cartera.md · perfil.toml<br/>positions, theses and limits]
+        VA[control/variables.toml · especificos.csv<br/>general and specific variables]
         CB[bot/config.py<br/>alert rules · RSS feeds<br/>language model]
     end
     N[nucleo/<br/>data · conditions · universe<br/>limits · shadow · costs · log]
@@ -184,8 +185,9 @@ flowchart LR
 Dependencies go one way only: `bot/` and `analisis/` use `nucleo/`, and `nucleo/` uses neither.
 
 ```
-├── control/         data configuration: cartera.csv, cartera.md, perfil.md, calendario.csv,
-│                    variables.toml (variables of the current system), factores.toml (factor model)
+├── control/         your configuration: cartera.csv (positions), cartera.md (theses), perfil.toml (blocks, limits,
+│                    commissions), variables.toml and especificos.csv (variables), calendario.csv (events),
+│                    factores.toml (factor model, under construction)
 ├── bot/             programs that run unattended
 │   ├── config.py        alert rules, shadow portfolio, RSS feeds and language model
 │   ├── alertas.py · diario.py · informe.py
@@ -194,12 +196,12 @@ Dependencies go one way only: `bot/` and `analisis/` use `nucleo/`, and `nucleo/
 ├── nucleo/          shared library (installable Python package)
 │   ├── datos.py         prices (Yahoo) and series (FRED), currency conversion, local copies
 │   ├── indicadores.py   alert conditions
-│   ├── universo.py      reads the portfolio and variables; consistency check
+│   ├── universo.py      reads the portfolio, variables and specific factors; consistency check
+│   ├── perfil.py        reads blocks, limits and commissions
 │   ├── exposiciones.py  exposure matrix (in production)
 │   ├── factores.py      factor model (under construction)
 │   ├── sombra.py · limites.py · costes.py · registro.py · backtest.py
 │   └── rutas.py         the only place with file paths
-├── conocimiento/    market monitoring framework: why these variables
 ├── analisis/        exposure matrix and decision-log evaluation
 ├── registro/        what the bot writes (empty here)
 ├── tests/           tests with no network or keys

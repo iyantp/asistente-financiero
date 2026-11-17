@@ -43,31 +43,32 @@ RECORDATORIO_CRISIS = (
     "📌 <b>Recuerda</b>:\n"
     "• Es una alarma para revisar con calma, no una orden de venta.\n"
     "• Un cruce lento de medias (75/500) solo ayuda en caídas largas; en caídas rápidas llega tarde.\n"
-    "• Antes de decidir, revisa control/perfil.md y control/cartera.md."
+    "• Antes de decidir, revisa tus notas (control/cartera.md) y tus límites (python -m nucleo.limites)."
 )
 
 RECORDATORIO_ORO = (
-    "📌 <b>Oro: posible punto de entrada</b>\n"
-    "• Es un aviso para estudiar la entrada, no una orden de compra.\n"
-    "• Antes de operar: python -m nucleo.costes <importe> y revisa los límites con python -m nucleo.limites."
+    "📌 <b>Oro: posible momento de aportar</b>\n"
+    "• Es un aviso para estudiarlo, no una orden de compra.\n"
+    "• Antes de operar: python -m nucleo.costes <importe> y python -m nucleo.limites."
 )
 
 ACTIVOS = [
-    # Alarma de crisis: salta cuando la media de 75 sesiones cae por debajo de la de 500.
+    # Alarma de crisis sobre el mercado (no hace falta que sea una posición): salta cuando la media de 75 sesiones
+    # cae por debajo de la de 500.
     Activo("S&P 500 (€)", "SPY", divisa="EURUSD=X",
            alarma=No(Cruce(75, 500)), recordatorio=RECORDATORIO_CRISIS),
     # Tendencias por defecto y una alarma de caída fuerte en un día.
     Activo("Nasdaq 100 (€)", "QQQ", divisa="EURUSD=X", alarma=Variacion(-0.03)),
-    # Posición con estrategia: entra cuando SMA6 > SMA70, sale cuando deja de cumplirse. `en_cartera` es la fecha de
+    # Posición con estrategia: entra cuando SMA6 > SMA70 y sale cuando deja de cumplirse. `en_cartera` es la fecha de
     # la compra real y `posicion` la fila de control/cartera.csv a la que corresponde (lo comprueba universo.coherencia).
-    Activo("Tierras raras (€)", "REMX", divisa="EURUSD=X",
-           senal=Cruce(6, 70), en_cartera="2026-06-01", posicion="VanEck Rare Earth",
+    Activo("Litio y baterías (€)", "LIT", divisa="EURUSD=X",
+           senal=Cruce(6, 70), en_cartera="2026-06-01", posicion="Litio y baterías",
            # Salida previa: tendencia corta bajista y nuevo mínimo de 60 sesiones (solo mientras la posición está DENTRO).
            alarma=Todas((No(Cruce(6, 70)), MinimoMovil(60)),
                         descripcion=("SMA6 bajo SMA70 y nuevo mínimo de 60 sesiones: salida previa",
                                      "deja de cumplirse la salida previa"))),
     # Seguimiento propio y una alarma compuesta: caída fuerte desde máximos y señales de suelo.
-    Activo("Oro (GLD €)", "GLD", divisa="EURUSD=X",
+    Activo("Oro (€)", "GLD", divisa="EURUSD=X",
            seguimiento={
                "Corto vs corto": Cruce(6, 20),
                "Medio vs largo": Cruce(70, 200),
@@ -76,18 +77,17 @@ ACTIVOS = [
            alarma=Todas((CaidaDesdeMaximo(0.15, 252), Cruce(6, 20), Cruce(1, 6), SinNuevoMinimo(5, 60)),
                         descripcion=("con el oro ≥ 15 % bajo su máximo de un año, SMA6 supera a SMA20, el precio cierra "
                                      "sobre SMA6 y pasan 5 sesiones sin nuevo mínimo de 60 sesiones",
-                                     "deja de cumplirse la señal de entrada")),
+                                     "deja de cumplirse la señal")),
            recordatorio=RECORDATORIO_ORO),
-    # Cripto: cotiza 24 h, 7 días (solo se evalúan velas cerradas).
-    Activo("Bitcoin ($)", "BTC-USD", continuo=True, alarma=MaximoMovil(252)),   # nuevo máximo de un año
-    Activo("Ethereum ($)", "ETH-USD", continuo=True),
+    # Cripto: cotiza 24 h, 7 días (solo se evalúan velas cerradas). Aviso de nuevo máximo de un año.
+    Activo("Bitcoin ($)", "BTC-USD", continuo=True, alarma=MaximoMovil(252)),
 ]
 
 # Cartera sombra: ideas en seguimiento simulado (sin dinero real), con su regla de salida desde el primer día.
 # Se evalúan en el informe semanal (o en local con `python bot/informe.py --sombra`). El coste de ida y vuelta
-# sale de nucleo/costes.py (aquí, un ETF a 0,12 % por operación: 0,24 %).
+# sale de python -m nucleo.costes (aquí, un ETF a 0,12 % por operación: 0,24 %).
 SOMBRA = [
-    Sombra("Oro (idea de ejemplo)", "GLD", "2026-11-02", divisa="EURUSD=X", tesis="Diversificación de la renta variable",
+    Sombra("China (idea de ejemplo)", "MCHI", "2026-11-02", divisa="EURUSD=X", tesis="Valoración baja frente al resto del mundo",
            stop=0.12, plazo=250, coste=0.0024),
 ]
 DIA_RESUMEN = 4  # 0 = lunes … 4 = viernes: día del resumen semanal de las alertas
@@ -111,7 +111,8 @@ DIARIO_PARAMETROS = {}                # campos extra o sustituidos de la petici�
 DIARIO_MAX_TITULARES = 80             # titulares máximos que se pasan al modelo
 # Quién es el inversor y ejemplos de noticia → posición, para las instrucciones del modelo (opcional).
 DIARIO_INVERSOR = "un inversor particular español"
-DIARIO_EJEMPLOS = 'resultados de grandes tecnológicas → "Fidelity Global Tech"; noticias de Bitcoin → "BTC (WBTC)"'
+DIARIO_EJEMPLOS = ('resultados de grandes tecnológicas → "Tecnología EE. UU."; ventas de coches eléctricos → '
+                   '"Litio y baterías"; regulación de las criptomonedas → "Bitcoin"')
 
 # Fuentes del resumen diario (RSS): estas son un ejemplo; pon las que leas. Si alguna falla, el resumen lo indica.
 FUENTES_RSS = {

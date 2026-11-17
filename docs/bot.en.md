@@ -11,7 +11,7 @@ Code, configuration and messages are in Spanish. Key terms: *activo* = asset, *c
 1. [Data](#data)
 2. [Alerts: rules per asset](#alerts-rules-per-asset)
 3. [Messages](#messages)
-4. [Market variables and exposure matrix](#market-variables-and-exposure-matrix)
+4. [General variables, specific factors and exposure matrix](#general-variables-specific-factors-and-exposure-matrix)
 5. [Reports](#reports)
 6. [Language model](#language-model)
 7. [Discipline: limits, log and shadow portfolio](#discipline-limits-log-and-shadow-portfolio)
@@ -68,8 +68,8 @@ Activo("Oro", "GLD", seguimiento={"Corto": Cruce(6, 20), "Largo": Cruce(70, 200)
 A position with a strategy and an early exit:
 
 ```python
-Activo("Tierras raras (€)", "REMX", divisa="EURUSD=X",
-       senal=Cruce(6, 70), en_cartera="2026-06-01", posicion="VanEck Rare Earth",
+Activo("Litio y baterías (€)", "LIT", divisa="EURUSD=X",
+       senal=Cruce(6, 70), en_cartera="2026-06-01", posicion="Litio y baterías",
        alarma=Todas((No(Cruce(6, 70)), MinimoMovil(60))))
 ```
 
@@ -87,14 +87,17 @@ Activo("Tierras raras (€)", "REMX", divisa="EURUSD=X",
 - 🔑 **Renew the token**: if you set `TOKEN_CADUCA`, starting 14 days before it expires.
 - ❌ **Error**: something failed; the run shows up red in GitHub Actions.
 
-## Market variables and exposure matrix
+## General variables, specific factors and exposure matrix
 
-The method is fixed; the variables are configuration. `control/variables.toml` defines:
+The method is fixed; the variables are configuration. There are two layers:
+
+**General variables** (`control/variables.toml`), which move every asset:
 
 - **`[variables]`**: the state variables, each with its source (`fred` or `yahoo`), its code, how its change is measured (`dif` for rates and spreads, `log` for prices), whether it enters the matrix and, optionally, a short name and what a rise means (passed to the model that classifies news).
 - **`[diarias]`**: proxies with fresh daily data, used to check whether a variable actually moved on the day of a story (FRED publishes with a lag). They can be a ticker or a **basket** (`[cestas]`: weighted sum of log changes).
-- **`[factores]`**: reference assets that explain a position better than the general variables (for example, lithium for a rare-earths ETF). They are tracked in the weekly report and guide the daily brief.
 - **`[parametros]`**: sample start and regime-change date.
+
+**Specific factors** (`control/especificos.csv`): reference assets that explain one or a few positions better than the general variables. In the example, miners and the Chinese stock market for the lithium ETF, and the Nasdaq for bitcoin. It is a table with three columns: `factor` (name), `ticker` (Yahoo Finance) and `posiciones` (the positions from `cartera.csv` it explains, separated by `;`). They are tracked in the weekly report and guide the daily brief: a story that moves the factor directly affects those positions. One factor can serve several positions.
 
 From the variables, `python -m nucleo.exposiciones` computes the **exposure matrix** (`analisis/exposiciones.csv`): for each portfolio asset and each variable, how much the asset moves in a week when the variable moves by one standard deviation. It gives two readings: the **typical effect** (simple regression, including how the other variables usually move at the same time; used by the daily brief for news) and the **direct exposure** (multiple regression, holding the others fixed; used by the weekly report to attribute the week). The full method is documented in [`nucleo/exposiciones.py`](../nucleo/exposiciones.py).
 
@@ -107,7 +110,7 @@ Regenerate the matrix when you change the variables or the portfolio, and every 
 | 📰 **Daily brief** (`bot/diario.py`) | Headlines from the feeds in `config.FUENTES_RSS` since the last Wall Street close. The model (temperature 0, no web search) only groups and classifies them by state variable; the code decides with fixed rules: the variable must have actually moved ($\lvert z \rvert \ge 1.5$ on its daily proxy; if it has no daily data, the model's surprise flag is used) and have a typical effect on the portfolio of at least 0.1 % per weekly standard deviation. Up to 3 stories with their $z$, the estimated effect on the portfolio, the affected positions and the sources. If the API fails (for example, no credit left), it warns on Telegram. Consistency test: `python bot/diario.py --prueba 3`. |
 | 📊 **Weekly report** (`bot/informe.py`) | Profile limits, shadow portfolio, portfolio consistency (only if something does not match), notable variables (unusual move or extreme level over 5 years), how much of the portfolio's week each variable explains, sector factors for each position and the week's events (`control/calendario.csv`). Series with no data for the week yet (FRED publishes with a lag) are flagged and left out of the calculation. Pure computation, no AI. |
 
-The state-variable framework, the exposure matrix and the news-filtering protocol are in [`conocimiento/mercado.md`](../conocimiento/mercado.md) (in Spanish).
+The variables and the matrix are explained in [General variables, specific factors and exposure matrix](#general-variables-specific-factors-and-exposure-matrix); the technical summary, in the [README appendix](../README.en.md#technical-appendix).
 
 ## Language model
 
@@ -142,14 +145,14 @@ The `diario` workflow passes the `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `LLM_
 
 | Tool | What it does | How to use it |
 |---|---|---|
-| **Limits** (`nucleo/limites.py`) | Checks the weights in `control/cartera.csv` against the profile limits (crypto + speculation ≤ 15 %, ≤ 8 % per speculative position). Warns "close" from 90 % of a limit. | Part of the weekly report. Locally, `python -m nucleo.limites "ETH=+1.5" "Vanguard U.S. 500=-1.5"` simulates a trade before making it. |
+| **Limits** (`nucleo/limites.py`) | Checks the weights in `control/cartera.csv` against the limits in `control/perfil.toml`: maximums for the sum of some blocks, maximums per position and minimums (in the example, satellites ≤ 15 % and ≤ 5 % each). Warns "close" from 90 % of a limit. | Part of the weekly report. Locally, `python -m nucleo.limites "Bitcoin=+1" "Renta variable mundial=-1"` simulates a trade before making it. |
 | **Decision log** (`nucleo/registro.py`) | Every alert and every story in the daily brief (including the discarded ones, as a control) is logged with the expected price direction, the variable and its $z$. | `python analisis/evaluar_registro.py`: what the price did afterwards. With few rows nothing can be concluded. |
 | **Shadow portfolio** (`nucleo/sombra.py`, `SOMBRA` in `bot/config.py`) | Tracks ideas without real money, with an exit rule from day one: a condition from `indicadores.py`, maximum drawdown from the peak, `stop` (fixed drop from the entry price) or a time limit. Costs are deducted (`coste` is mandatory). | Add a `Sombra(...)` to `SOMBRA`; it appears in the weekly report. Locally, `python bot/informe.py --sombra`. |
-| **Costs** (`nucleo/costes.py`) | Commissions per platform (in the example: ETFs at 0.12 %, minimum €1, maximum €25, FX conversion 0.30 %; funds free of charge). | `python -m nucleo.costes 5000` or `python -m nucleo.costes 100 divisa`. |
+| **Costs** (`nucleo/costes.py`) | Commissions per platform, set in `control/perfil.toml` (in the example: ETFs at 0.12 %, minimum €1, maximum €25, FX conversion 0.30 %; funds free of charge). | `python -m nucleo.costes 5000` or `python -m nucleo.costes 100 divisa`. |
 
 ## Step-by-step setup
 
-First, try it locally with `--demo` (see the [README](../README.en.md#quick-start)): it prints the messages instead of sending them and does not write to `registro/`.
+First, try it locally with `--demo` (see the [README](../README.en.md#try-it)): it prints the messages instead of sending them and does not write to `registro/`.
 
 ### 1. Copy the repository
 
@@ -219,12 +222,12 @@ The `informe` can run on any day; it summarises the last full week. Example sche
 
 | If you change… | Do this |
 |---|---|
-| A position | Its row in `control/cartera.csv` (name, block, weight, short name, Yahoo ticker that proxies it, currency) and its strategy in `control/cartera.md`. Then run `python -m nucleo.exposiciones` to regenerate the matrix. |
+| A position | Its row in `control/cartera.csv` (name, block, weight, short name, Yahoo ticker that proxies it, currency: empty if it is already in your currency) and its thesis in `control/cartera.md`. Then run `python -m nucleo.exposiciones` to regenerate the matrix. |
 | A bot rule | `bot/config.py` (with `posicion=` if it belongs to a portfolio position). |
 | A kind of condition | A class in `nucleo/indicadores.py` with `serie()`, `describir()` and `sesiones`, plus its test in `tests/`. |
-| A state variable, a daily proxy or a sector factor | `control/variables.toml`; then `python -m nucleo.exposiciones`. It is worth explaining why in `conocimiento/mercado.md`. |
-| The profile limits | `nucleo/limites.py` and `control/perfil.md`. |
-| Commissions | `nucleo/costes.py`. |
+| A general variable or a daily proxy | `control/variables.toml`; then `python -m nucleo.exposiciones`. |
+| A specific factor | Its row in `control/especificos.csv`. |
+| The blocks, limits or commissions | `control/perfil.toml`. |
 | News sources | `FUENTES_RSS` in `bot/config.py`. |
 | The language model | `DIARIO_*` in `bot/config.py` (see [Language model](#language-model)). |
 | A new file read by the code | Its path in `nucleo/rutas.py`, and nowhere else. |

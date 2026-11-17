@@ -1,38 +1,19 @@
-# Cartera (ejemplo)
+# Notas de la cartera (ejemplo)
 
-> **Cartera ficticia.** Los activos son reales (para que el bot y los análisis funcionen con datos de mercado), pero los pesos, fechas y tesis son de ejemplo. Los importes nunca se versionan: irían en `cartera.local.md`, ignorado por git.
+> **Cartera de ejemplo**, típica de un inversor indexado con algunos satélites. Los pesos están en `cartera.csv`; aquí van las tesis y las condiciones de salida, en texto libre. **El resumen diario envía este archivo al modelo de lenguaje** para que avise si una noticia toca alguna tesis o salida, así que conviene que sea breve y concreto. Los importes nunca se versionan: si quieres guardarlos, usa un archivo `*.local.*`, que git ignora.
 
-## Pesos
+## Núcleo (91 %)
 
-Los pesos (y el bloque de cada posición) están **solo en `cartera.csv`**, el registro único que leen el bot, los informes y los límites. Para verlos: `python -m nucleo.limites`.
+Inversión a largo plazo con aportaciones periódicas; no se vende por movimientos de mercado.
 
-## Posiciones
+- **Renta variable mundial (51 %)** y **pequeñas empresas de EE. UU. (5 %)**: crecimiento a largo plazo. La alarma de crisis del S&P 500 obliga a revisar, no a vender.
+- **Bonos del Tesoro de EE. UU. (25 %)**: amortiguan las caídas de la bolsa cuando bajan los tipos.
+- **Oro (10 %)**: diversificación frente a la inflación y a las crisis.
 
-| Posición | Bloque | Aproximación en Yahoo |
-|---|---|---|
-| Vanguard U.S. 500 (fondo indexado) | Ahorro | SPY |
-| Amundi MSCI World (fondo indexado) | Ahorro | URTH |
-| Fidelity Global Tech (fondo sectorial) | Ahorro | IXN |
-| Bono del Tesoro de EE. UU. 2035 | Ahorro (renta fija) | IEF |
-| ETH | Cripto | ETH-USD |
-| BTC (WBTC) | Cripto | BTC-USD |
-| VanEck Rare Earth (ETF) | Especulación | REMX |
+## Satélites (9 %)
 
-## Estrategia por posición
+Cada uno con tesis y salida definidas antes de entrar (límites en `perfil.toml`: 15 % en total y 5 % por posición).
 
-### Ahorro: renta variable
-Se mantiene a largo plazo con aportaciones periódicas. Sin regla de salida; la alarma de crisis del S&P 500 obliga a revisar, no a vender.
-
-### Ahorro: renta fija
-Bono a vencimiento: amortigua las caídas de la renta variable cuando bajan los tipos.
-
-### Cripto
-Apuesta de largo plazo con peso pequeño. El bot sigue sus tendencias; no hay regla de salida.
-
-### Especulación
-**VanEck Rare Earth.** Tesis: la demanda de tierras raras para baterías y defensa y la búsqueda de proveedores fuera de China. Factores que la explican (en `control/variables.toml`, `[factores]`): baterías y litio (LIT), mineras globales (PICK) y bolsa china (MCHI).
-Salida: cruce a la baja SMA6/SMA70 (`senal` en `bot/config.py`), con salida previa si además marca un nuevo mínimo de 60 sesiones. La tesis se invalida si cambia la política de exportaciones de China.
-
-## Seguimiento en el bot
-
-Las reglas de cada activo están en `bot/config.py`; el manual, en `docs/bot.md`.
+- **Tecnología EE. UU. (Nasdaq 100, 4 %)**. Tesis: las grandes tecnológicas siguen creciendo más que el mercado. Salida: si su peso llega al límite del 5 % por satélite, se vende lo que exceda.
+- **Litio y baterías (2 %)**. Tesis: demanda de baterías por el coche eléctrico y el almacenamiento de energía. Salida: cruce a la baja SMA6/SMA70 (estrategia en `bot/config.py`), con salida previa si además marca un mínimo de 60 sesiones. La tesis se invalida si se frena la venta de coches eléctricos en China.
+- **Bitcoin (3 %)**. Tesis: reserva de valor alternativa a largo plazo. Sin salida por precio; se revisa si cambia la regulación en EE. UU. o en la UE.

@@ -3,7 +3,7 @@
 Cada tipo de evento promete algo distinto, y se mide solo eso:
 - Alertas (reglas de medias, alarmas): prometen que la tendencia sigue → rentabilidad a 1, 5 y 20
   sesiones desde el cierre del día del evento.
-- Noticias del resumen diario: NO prometen predecir el precio (mercado.md). Prometen que la variable
+- Noticias del resumen diario: NO prometen predecir el precio. Prometen que la variable
   movida afecta a la cartera en la dirección indicada por el efecto típico de la matriz. Se mide:
     h = 0  la sesión anterior a la publicación (la que midió el z del filtro): ¿la cartera se movió en la
            dirección esperada? Comprueba que el efecto típico de la matriz acierta el signo.

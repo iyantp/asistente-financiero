@@ -2,18 +2,20 @@
 
 Es la única definición: la matriz de exposición (nucleo/exposiciones.py), el informe semanal y el resumen
 diario la importan de aquí. Nada de esto se escribe en el código:
-- las variables de estado, sus aproximaciones diarias, las cestas y los factores sectoriales se leen de
-  control/variables.toml (el método es general; las variables concretas son configuración);
-- los activos de la cartera se leen de control/cartera.csv, el registro único de posiciones (nombre, bloque,
-  peso, nombre corto y aproximación en Yahoo).
-`coherencia()` comprueba que todo cuadra (variables, factores, matriz y reglas del bot).
+- las variables generales, sus aproximaciones diarias y las cestas se leen de control/variables.toml (el método
+  es general; las variables concretas son configuración);
+- los factores específicos de cada posición, de control/especificos.csv;
+- los activos de la cartera, de control/cartera.csv, el registro único de posiciones (nombre, bloque, peso,
+  nombre corto y aproximación en Yahoo); los bloques válidos, de control/perfil.toml.
+`coherencia()` comprueba que todo cuadra (variables, específicos, perfil, matriz y reglas del bot).
 
 Comprobación rápida de la configuración:  python -m nucleo.universo
 """
 import csv
 import sys
 
-from nucleo.rutas import CARTERA_CSV, VARIABLES_TOML
+from nucleo import perfil
+from nucleo.rutas import CARTERA_CSV, ESPECIFICOS_CSV, VARIABLES_TOML
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -41,7 +43,7 @@ SIGNIFICADO = {n: v["sube"] for n, v in _CONF.get("variables", {}).items() if v.
 
 # Activos de la cartera (de control/cartera.csv)
 COLUMNAS_CARTERA = ("activo", "bloque", "peso", "corto", "ticker", "divisa", "aproximacion")
-BLOQUES = ("ahorro", "cripto", "especulacion")
+BLOQUES = tuple(perfil.bloques())
 
 
 def leer_cartera(ruta=CARTERA_CSV):
@@ -64,8 +66,25 @@ DIARIAS = {n: (d.get("ticker"), d.get("cambio"), d.get("variable"), int(d.get("s
 # Cestas: nombre -> {ticker: peso}; su cambio es la suma ponderada de los cambios logarítmicos de los tickers
 CESTAS = {n: {t: float(w) for t, w in c.items()} for n, c in _CONF.get("cestas", {}).items()}
 
-# Factores sectoriales: posición de cartera.csv -> {nombre del factor: ticker de Yahoo}
-FACTORES = {a: dict(f) for a, f in _CONF.get("factores", {}).items()}
+
+
+def leer_especificos(ruta=ESPECIFICOS_CSV):
+    """Filas de especificos.csv: {"factor", "ticker", "posiciones": [nombres de cartera.csv]}."""
+    if not ruta.exists():
+        return []
+    with open(ruta, encoding="utf-8", newline="") as f:
+        return [{"factor": r["factor"].strip(), "ticker": r["ticker"].strip(),
+                 "posiciones": [x.strip() for x in r.get("posiciones", "").split(";") if x.strip()]}
+                for r in csv.DictReader(f)]
+
+
+# Factores específicos (control/especificos.csv): los que explican a una o pocas posiciones concretas.
+ESPECIFICOS = leer_especificos()
+# Vista por posición, para los mensajes: posición -> {nombre del factor: ticker de Yahoo}
+FACTORES = {}
+for _e in ESPECIFICOS:
+    for _p in _e["posiciones"]:
+        FACTORES.setdefault(_p, {})[_e["factor"]] = _e["ticker"]
 
 
 def problemas_variables(variables=None, diarias=None, cestas=None):
@@ -128,7 +147,7 @@ def coherencia(activos_bot=(), matriz=None, filas=None):
     `filas`: filas de la cartera (por defecto, las de cartera.csv; sirve para las pruebas)."""
     filas = _CARTERA if filas is None else filas
     nombres = [f.get("activo", "") for f in filas]
-    problemas = problemas_variables() if filas is _CARTERA else []
+    problemas = (problemas_variables() + perfil.problemas()) if filas is _CARTERA else []
     if filas and (faltan := [c for c in COLUMNAS_CARTERA if c not in filas[0]]):
         problemas.append(f"cartera.csv: faltan columnas {faltan}")
     if (repetidos := sorted({n for n in nombres if nombres.count(n) > 1})):
@@ -146,7 +165,7 @@ def coherencia(activos_bot=(), matriz=None, filas=None):
         problemas.append(f"cartera.csv: peso no válido ({e})")
     for activo in FACTORES:
         if activo not in nombres:
-            problemas.append(f"variables.toml: el factor de {activo!r} apunta a una posición que no está en cartera.csv")
+            problemas.append(f"especificos.csv: un factor apunta a {activo!r}, que no está en cartera.csv")
     for a in activos_bot:
         posicion = getattr(a, "posicion", None)
         if posicion and posicion not in nombres:
@@ -162,13 +181,13 @@ def coherencia(activos_bot=(), matriz=None, filas=None):
 
 
 if __name__ == "__main__":
-    print(f"Variables de estado ({VARIABLES_TOML.name}):")
+    print(f"Variables generales ({VARIABLES_TOML.name}):")
     for n, (fuente, codigo, cambio, matriz) in VARIABLES.items():
         print(f"  {n:<26} {fuente}:{codigo:<14} {cambio}  {'matriz' if matriz else 'solo informe'}")
     print("Aproximaciones diarias:")
     for n, (ticker, cambio, var, signo) in DIARIAS.items():
         print(f"  {n:<26} {ticker:<12} → {var or '(informativa)'}{'' if signo == 1 else ' (signo -)'}")
-    print("Factores:", "; ".join(f"{a} ← {', '.join(f)}" for a, f in FACTORES.items()) or "ninguno")
+    print("Específicos:", "; ".join(f"{a} ← {', '.join(f)}" for a, f in FACTORES.items()) or "ninguno")
     try:
         problemas = coherencia(matriz=leer_matriz())
     except RuntimeError as e:  # matriz generada con otras variables

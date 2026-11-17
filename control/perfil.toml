@@ -1,0 +1,38 @@
+# Perfil de riesgo: bloques de la cartera, límites y comisiones de operar.
+# Lo leen la comprobación de control/cartera.csv, los límites del informe semanal (python -m nucleo.limites) y la
+# calculadora de costes (python -m nucleo.costes). ESTE ES UN PERFIL DE EJEMPLO: pon el tuyo.
+
+aviso_cerca = 0.9   # se avisa «cerca» desde este porcentaje de un límite (0,9 = 90 %)
+
+# Bloques: valores válidos de la columna `bloque` de cartera.csv  →  nombre en los mensajes
+[bloques]
+nucleo = "Núcleo"       # inversión a largo plazo: indexados, bonos, oro
+satelite = "Satélite"   # apuestas con tesis y salida: temáticas, cripto
+
+# Límites, en % del total, en el orden en que se muestran. Tipos:
+#   maximo_conjunto  la suma de los `bloques` no pasa de `valor`
+#   maximo_posicion  ninguna posición de los `bloques` pasa de `valor`
+#   minimo_conjunto  la suma de los `bloques` no baja de `valor`
+[[limites]]
+tipo = "maximo_conjunto"
+bloques = ["satelite"]
+valor = 15
+
+[[limites]]
+tipo = "maximo_posicion"
+bloques = ["satelite"]
+valor = 5
+
+# Comisiones por plataforma, por operación: `porcentaje` del importe con `minimo` y `maximo` en tu moneda (0 = sin
+# mínimo o sin máximo), más `cambio_divisa` si el valor cotiza en otra divisa. El coste continuo (TER) va aparte.
+[comisiones.broker_etf]
+porcentaje = 0.0012
+minimo = 1.0
+maximo = 25.0
+cambio_divisa = 0.0030
+
+[comisiones.fondos]      # muchos brókeres no cobran por comprar, vender ni traspasar fondos indexados
+porcentaje = 0.0
+minimo = 0.0
+maximo = 0.0
+cambio_divisa = 0.0

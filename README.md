@@ -23,7 +23,7 @@ Partió de dos intenciones. Por un lado, programar por mi cuenta las alertas y l
 El asistente no sigue «todas las noticias». Usa dos tipos de variables:
 
 - **Variables generales**, que mueven a todos los activos: la bolsa mundial, los tipos de interés, el crédito, la inflación, el dólar, las materias primas…
-- **Variables específicas** de un activo concreto, para lo que las generales no explican: el litio y las mineras para un fondo de tierras raras, o el bitcoin para el ether.
+- **Variables específicas** de uno o pocos activos concretos, para lo que las generales no explican: las mineras y la bolsa china para un fondo de litio, o el Nasdaq para el bitcoin.
 
 Con datos históricos mide cuánto se mueve cada uno de tus activos cuando se mueve cada variable. De ahí salen tres cosas:
 - **Qué noticias te afectan:** una noticia solo pasa el filtro si mueve una variable que mueve tu cartera y si esa variable se ha movido de verdad.
@@ -52,12 +52,13 @@ En Windows, la cuarta línea es `.venv\Scripts\activate`. Las dos últimas muest
 
 | Qué | Dónde |
 |---|---|
-| Tu cartera: posiciones, pesos y en qué moneda está cada una | `control/cartera.csv` (y tus notas en `control/cartera.md`) |
+| Tu cartera: posiciones, pesos y en qué moneda está cada una | `control/cartera.csv` (una tabla: se edita en Excel o en cualquier editor) |
+| Tus tesis y condiciones de salida, en texto libre (el resumen de noticias las tiene en cuenta) | `control/cartera.md` |
 | Tus reglas de alertas | `bot/config.py` |
 | Tus fuentes de noticias | `bot/config.py` (`FUENTES_RSS`) |
 | El proveedor de IA (Anthropic, OpenAI, Gemini, un modelo en tu ordenador…) | `bot/config.py` (`DIARIO_*`) |
-| Tus variables de mercado | `control/variables.toml` |
-| Tus límites de riesgo | `control/perfil.md` y `nucleo/limites.py` |
+| Tus variables de mercado: generales y específicas de algún activo | `control/variables.toml` y `control/especificos.csv` |
+| Los bloques de tu cartera, tus límites de riesgo y las comisiones de tu bróker | `control/perfil.toml` |
 | Eventos de la semana (Fed, BCE, IPC…) | `control/calendario.csv` |
 | A qué hora llega cada cosa | El programador que uses (ver la guía) |
 
@@ -103,7 +104,7 @@ Licencia [MIT](LICENSE).
 
 ### A. Cómo se mide el efecto de las variables
 
-**En producción: la matriz de exposición** (`nucleo/exposiciones.py`, `python -m nucleo.exposiciones`). Las variables generales se definen en `control/variables.toml` y las específicas en su sección `[factores]`. Para cada activo de la cartera y cada variable general, la matriz estima con datos semanales en euros cuánto se mueve el activo cuando la variable se mueve una desviación típica, en dos lecturas:
+**En producción: la matriz de exposición** (`nucleo/exposiciones.py`, `python -m nucleo.exposiciones`). Las variables generales se definen en `control/variables.toml` y los factores específicos en `control/especificos.csv`. Para cada activo de la cartera y cada variable general, la matriz estima con datos semanales en euros cuánto se mueve el activo cuando la variable se mueve una desviación típica, en dos lecturas:
 - **Efecto típico**, $\gamma_k$: regresión simple, que incluye cómo se mueven a la vez las demás variables. Es la que usa el resumen diario para las noticias.
 - **Exposición directa**, $\beta_k$: regresión múltiple, con las demás fijas. Es la que usa el informe semanal para atribuir la semana.
 
@@ -116,7 +117,7 @@ $$r_{a,t} = \alpha_a + \sum_k \beta_{a,k}\, f_{k,t} + \varepsilon_{a,t},$$
 y de ahí sale también la correlación entre activos, $\Sigma = B\,\Omega\,B^\top + D$. Frente a la matriz:
 - **Factores negociables con dato diario** (ETF y diferencias entre ETF) en lugar de series macroeconómicas que se publican con retraso.
 - **Ortogonalización en un orden elegido** (Gram-Schmidt), para que factores solapados, como el euro y el dólar, no se repartan el mérito de forma inestable.
-- **Factores específicos** de cada posición, limpios de los generales.
+- **Factores específicos** compartidos por las posiciones a las que explican y limpios de los generales. Si una posición tuviera su factor en exclusiva, la parte que comparte con otras quedaría como riesgo propio y se perdería su correlación (con el bitcoin y el ether, el modelo daría 0,13 en lugar del 0,82 real).
 - **Conversión de divisa exacta,** en vez de estimada como un factor más.
 
 Está pendiente estimar exposiciones que varían en el tiempo, contraer las estimaciones hacia valores de referencia, separar las correlaciones en calma y en tensión (VIX, MOVE y diferencial de crédito) y validar el modelo frente a lo que ocurre después.
@@ -146,8 +147,8 @@ flowchart LR
     end
     subgraph CFG[Tu configuración]
         direction TB
-        CA[control/cartera.csv · cartera.md<br/>posiciones, pesos y tesis]
-        VA[control/variables.toml<br/>variables generales y específicas]
+        CA[control/cartera.csv · cartera.md · perfil.toml<br/>posiciones, tesis y límites]
+        VA[control/variables.toml · especificos.csv<br/>variables generales y específicas]
         CB[bot/config.py<br/>reglas de alertas · fuentes RSS<br/>modelo de lenguaje]
     end
     N[nucleo/<br/>datos · indicadores · universo<br/>límites · sombra · costes · registro]
@@ -182,8 +183,9 @@ flowchart LR
 Las dependencias van en un solo sentido: `bot/` y `analisis/` usan `nucleo/`, y `nucleo/` no usa a ninguno de los dos.
 
 ```
-├── control/         configuración de datos: cartera.csv, cartera.md, perfil.md, calendario.csv,
-│                    variables.toml (variables del sistema actual), factores.toml (modelo de factores)
+├── control/         tu configuración: cartera.csv (posiciones), cartera.md (tesis), perfil.toml (bloques, límites,
+│                    comisiones), variables.toml y especificos.csv (variables), calendario.csv (eventos),
+│                    factores.toml (modelo de factores, en construcción)
 ├── bot/             programas que se ejecutan solos
 │   ├── config.py        reglas de alertas, cartera sombra, fuentes RSS y modelo de lenguaje
 │   ├── alertas.py · diario.py · informe.py
@@ -192,12 +194,12 @@ Las dependencias van en un solo sentido: `bot/` y `analisis/` usan `nucleo/`, y 
 ├── nucleo/          biblioteca común (paquete Python instalable)
 │   ├── datos.py         precios (Yahoo) y series (FRED), conversión de divisa, copias locales
 │   ├── indicadores.py   condiciones de las alertas
-│   ├── universo.py      lee cartera y variables; comprobación de coherencia
+│   ├── universo.py      lee cartera, variables y específicos; comprobación de coherencia
+│   ├── perfil.py        lee bloques, límites y comisiones
 │   ├── exposiciones.py  matriz de exposición (en producción)
 │   ├── factores.py      modelo de factores (en construcción)
 │   ├── sombra.py · limites.py · costes.py · registro.py · backtest.py
 │   └── rutas.py         único sitio con rutas de archivos
-├── conocimiento/    marco de seguimiento del mercado: por qué estas variables
 ├── analisis/        matriz de exposición y evaluación del registro
 ├── registro/        lo que escribe el bot (aquí, vacío)
 ├── tests/           pruebas sin red ni claves
