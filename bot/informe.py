@@ -23,14 +23,11 @@ from telegram import comprobar_secretos, enviar
 from nucleo import limites, sombra
 from nucleo.datos import precios, variable
 from nucleo.rutas import CALENDARIO, CARTERA_CSV, MATRIZ
-from nucleo.universo import ACTIVOS, CORTO, FACTORES, INICIO, VARIABLES, coherencia, leer_matriz
+from nucleo.universo import ACTIVOS, CORTO, CORTO_VAR, FACTORES, INICIO, VARIABLES, coherencia, leer_matriz
 
 UMBRAL_Z = 2.0
 
 
-CORTO_VAR = {"Tipos reales 10a": "Tipos reales", "Inflación esperada 10a": "Inflación esperada",
-             "Tipo 2a": "Tipo 2a", "Dólar (EUR/USD)": "Euro/dólar", "Dólar amplio": "Dólar amplio", "Estrés de crédito": "Estrés de crédito",
-             "Crecimiento (cobre)": "Cobre", "Petróleo (Brent)": "Petróleo", "VIX": "VIX"}
 PCT_EXTREMO = 90
 
 
@@ -92,7 +89,7 @@ def bloque_cartera(hasta, filas):
     exp = leer_matriz(MATRIZ)
     betas = exp.pivot(index="activo", columns="variable", values="parcial_actual")  # atribución conjunta: exposición directa
     pesos = pd.read_csv(CARTERA_CSV).set_index("activo")["peso"]
-    z = pd.Series({n: f["z"] for n, f in filas.items() if "z" in f}).reindex(betas.columns).fillna(0.0)
+    z = pd.Series({n: f["z"] for n, f in filas.items() if "z" in f}, dtype=float).reindex(betas.columns).fillna(0.0)
 
     posiciones, total_r, total_e, peso_ok = [], 0.0, 0.0, 0.0
     contrib = pd.Series(0.0, index=betas.columns)

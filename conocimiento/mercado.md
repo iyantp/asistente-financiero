@@ -20,7 +20,7 @@ Variables generales que mueven a todos los activos. Los activos concretos (índi
 
 ## Matriz de exposición
 
-Cómo responde cada posición a cada variable. Se estima en `analisis/exposiciones.ipynb` y se guarda en `analisis/exposiciones.csv`: rentabilidad semanal de cada activo en euros frente a los cambios estandarizados de las variables (coeficiente = % semanal ante +1σ), desde 2012 y desde 2022 (régimen actual), con t de Newey-West y umbral del 1 %.
+Cómo responde cada posición a cada variable. Se estima con `python -m nucleo.exposiciones` (método en ese módulo; el cuaderno `analisis/exposiciones.ipynb` añade gráficos) y se guarda en `analisis/exposiciones.csv`: rentabilidad semanal de cada activo en euros frente a los cambios estandarizados de las variables (coeficiente = % semanal ante +1σ), desde 2012 y desde 2022 (régimen actual), con t de Newey-West y umbral del 1 %.
 
 **Dos lecturas, cada una para un uso** (revisión del 01/11/2026):
 
@@ -39,7 +39,7 @@ Correspondencia entre variables y series (8 series para 7 de las 9 variables):
 | Política monetaria | Tipo a 2 años (FRED DGS2) | Futuro del bono a 2 años (ZT=F, signo invertido) |
 | Inflación | Inflación esperada a 10 años (FRED T10YIE) | — (se usa la marca de sorpresa) |
 | Crecimiento | Cobre (HG=F) | Cobre |
-| Dólar | EUR/USD (FRED DEXUSEU + cola de Yahoo) y dólar amplio (FRED DTWEXBGS) | EUR/USD; cesta de 6 divisas (`universo.CESTA_DOLAR`) |
+| Dólar | EUR/USD (FRED DEXUSEU + cola de Yahoo) y dólar amplio (FRED DTWEXBGS) | EUR/USD; cesta de 6 divisas (`CESTA_DOLAR` en `control/variables.toml`) |
 | Estrés | Diferencial Baa frente al 10 años (FRED BAA10Y) | Bonos de alto riesgo (HYG, signo invertido); el VIX es solo informativo |
 | Materias primas | Brent (FRED DCOILBRENTEU) | Brent (BZ=F) |
 | Sentimiento | No entra: no hay series diarias gratuitas y fiables | — |
@@ -62,7 +62,7 @@ El tipo a 2 años sustituye a la pendiente 10a-2a: con el tipo real y la inflaci
 
 ## Factores sectoriales
 
-Capa intermedia entre las variables de estado y cada activo (mercado → sector → activo). Son activos de referencia que explican una posición mejor que las variables generales; no entran en la matriz, pero se siguen en el informe semanal y orientan el resumen diario (una noticia que mueve el factor afecta directamente a la posición). Se descubren con `analisis/candidatas.ipynb` y se definen en `nucleo/universo.py` (`FACTORES`).
+Capa intermedia entre las variables de estado y cada activo (mercado → sector → activo). Son activos de referencia que explican una posición mejor que las variables generales; no entran en la matriz, pero se siguen en el informe semanal y orientan el resumen diario (una noticia que mueve el factor afecta directamente a la posición). Se descubren contrastando candidatas con la misma regresión que la matriz (cuánto R² añaden a las variables de estado) y se definen en `control/variables.toml` (`[factores]`).
 
 | Posición | Factores | Evidencia |
 |---|---|---|

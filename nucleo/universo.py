@@ -1,30 +1,43 @@
-"""Universo común al bot y a los cuadernos: variables de estado y activos de la cartera.
+"""Universo común al bot y a los análisis: variables de estado y activos de la cartera.
 
-Es la única definición: el cuaderno de exposiciones, el informe semanal y el
-resumen diario la importan de aquí. El marco conceptual está en conocimiento/mercado.md.
+Es la única definición: la matriz de exposición (nucleo/exposiciones.py), el informe semanal y el resumen
+diario la importan de aquí. Nada de esto se escribe en el código:
+- las variables de estado, sus aproximaciones diarias, las cestas y los factores sectoriales se leen de
+  control/variables.toml (el método es general; las variables concretas son configuración);
+- los activos de la cartera se leen de control/cartera.csv, el registro único de posiciones (nombre, bloque,
+  peso, nombre corto y aproximación en Yahoo).
+`coherencia()` comprueba que todo cuadra (variables, factores, matriz y reglas del bot).
 
-Los activos de la cartera NO se escriben aquí: se leen de control/cartera.csv, que es el registro único
-de posiciones (nombre, bloque, peso, nombre corto y aproximación en Yahoo). Para dar de alta o de baja
-una posición basta con su fila en cartera.csv; `coherencia()` comprueba que lo demás (factores, matriz,
-reglas del bot) sigue cuadrando.
+Comprobación rápida de la configuración:  python -m nucleo.universo
 """
 import csv
+import sys
 
-from nucleo.rutas import CARTERA_CSV
+from nucleo.rutas import CARTERA_CSV, VARIABLES_TOML
 
-# Variables de estado: nombre -> (fuente, código, tipo de cambio, ¿entra en la regresión?)
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # Python 3.10
+    import tomli as tomllib
+
+FUENTES = ("fred", "yahoo")
+CAMBIOS = ("dif", "log")
+
+
+def leer_variables(ruta=VARIABLES_TOML):
+    with open(ruta, "rb") as f:
+        return tomllib.load(f)
+
+
+_CONF = leer_variables()
+_PARAM = _CONF.get("parametros", {})
+
+# Variables de estado: nombre -> (fuente, código, tipo de cambio, ¿entra en la matriz?)
 #   tipo de cambio: "dif" = diferencia (tipos, diferenciales, en puntos); "log" = cambio logarítmico (precios)
-VARIABLES = {
-    "Tipos reales 10a": ("fred", "DFII10", "dif", True),
-    "Inflación esperada 10a": ("fred", "T10YIE", "dif", True),
-    "Tipo 2a": ("fred", "DGS2", "dif", True),                   # expectativas de política monetaria (Fed)
-    "Dólar (EUR/USD)": ("fred", "DEXUSEU", "log", True),        # sube = euro más fuerte
-    "Dólar amplio": ("fred", "DTWEXBGS", "log", True),          # dólar frente a una cesta mundial; sube = dólar más fuerte
-    "Estrés de crédito": ("fred", "BAA10Y", "dif", True),       # diferencial Baa frente al 10 años
-    "Crecimiento (cobre)": ("yahoo", "HG=F", "log", True),
-    "Petróleo (Brent)": ("fred", "DCOILBRENTEU", "log", True),
-    "VIX": ("fred", "VIXCLS", "dif", False),                    # estrés de mercado; solo en los informes
-}
+VARIABLES = {n: (v.get("fuente"), v.get("codigo"), v.get("cambio"), bool(v.get("matriz", True)))
+             for n, v in _CONF.get("variables", {}).items()}
+CORTO_VAR = {n: v.get("corto", n) for n, v in _CONF.get("variables", {}).items()}   # nombre en los mensajes
+SIGNIFICADO = {n: v["sube"] for n, v in _CONF.get("variables", {}).items() if v.get("sube")}  # qué es «sube»
 
 # Activos de la cartera (de control/cartera.csv)
 COLUMNAS_CARTERA = ("activo", "bloque", "peso", "corto", "ticker", "divisa", "aproximacion")
@@ -40,58 +53,56 @@ _CARTERA = leer_cartera()
 ACTIVOS = {f["activo"]: (f["ticker"], f["divisa"] or None) for f in _CARTERA}   # nombre -> (ticker, divisa)
 CORTO = {f["activo"]: f["corto"] or f["activo"] for f in _CARTERA}               # nombre -> nombre corto (mensajes)
 
-INICIO = "2012-01-01"          # inicio de la muestra para estandarizar y estimar
-CORTE_REGIMEN = "2022-01-01"   # cambio de régimen de inflación
+INICIO = _PARAM.get("inicio", "2012-01-01")                # inicio de la muestra para estandarizar y estimar
+CORTE_REGIMEN = _PARAM.get("corte_regimen", "2022-01-01")  # inicio del régimen actual
 
-# Aproximaciones de mercado con dato diario fresco (Yahoo) para el resumen diario: sirven para comprobar
-# si una variable de la matriz se ha movido de verdad (protocolo, pasos 2 y 3). FRED publica con 1-7 días
-# de retraso; estas cotizan cada día.
-#   nombre -> (ticker, tipo de cambio, variable de la matriz o None si solo es informativa,
-#              signo: +1 si sube cuando sube la variable, -1 si va al revés)
-# Notas: ^TNX es el tipo NOMINAL a 10 años (aproxima el movimiento del real, que no tiene dato diario);
-# ZT=F es el precio del futuro del bono a 2 años (sube cuando baja el tipo); la cesta del dólar está en
-# CESTA_DOLAR; los tipos de cambio de Yahoo se comparan tal cual (vela fechada al inicio del día en Londres:
-# el último cambio cubre la sesión de ayer y la noche). La inflación esperada no tiene aproximación diaria.
-DIARIAS = {
-    "Bono 10a EE. UU. (nominal)": ("^TNX", "dif", "Tipos reales 10a", 1),
-    "Futuro bono 2a EE. UU.": ("ZT=F", "log", "Tipo 2a", -1),
-    "EUR/USD": ("EURUSD=X", "log", "Dólar (EUR/USD)", 1),
-    "Dólar amplio (cesta)": ("CESTA_DOLAR", "log", "Dólar amplio", 1),
-    "Crédito alto riesgo (HYG)": ("HYG", "log", "Estrés de crédito", -1),
-    "VIX": ("^VIX", "dif", None, 1),
-    "Cobre": ("HG=F", "log", "Crecimiento (cobre)", 1),
-    "Brent": ("BZ=F", "log", "Petróleo (Brent)", 1),
-}
+# Aproximaciones diarias para el resumen diario (comprobar si una variable se ha movido de verdad):
+#   nombre -> (ticker o nombre de una cesta, tipo de cambio, variable que aproxima o None, signo)
+DIARIAS = {n: (d.get("ticker"), d.get("cambio"), d.get("variable"), int(d.get("signo", 1)))
+           for n, d in _CONF.get("diarias", {}).items()}
 
-# Aproximación diaria del dólar amplio (FRED DTWEXBGS va con una semana de retraso): media ponderada de
-# los cambios logarítmicos frente a las seis mayores divisas del índice de la Fed (pesos aproximados,
-# reescalados a 1). Signo: + = el dólar se fortalece. El DXY no sirve: el euro pesa el 58 %.
-CESTA_DOLAR = {
-    "EURUSD=X": -0.268,   # dólares por euro: si sube, el dólar se debilita
-    "MXN=X": 0.211,       # pesos por dólar
-    "CNY=X": 0.183,
-    "CAD=X": 0.183,
-    "JPY=X": 0.085,
-    "GBPUSD=X": -0.070,   # dólares por libra
-}
+# Cestas: nombre -> {ticker: peso}; su cambio es la suma ponderada de los cambios logarítmicos de los tickers
+CESTAS = {n: {t: float(w) for t, w in c.items()} for n, c in _CONF.get("cestas", {}).items()}
+
+# Factores sectoriales: posición de cartera.csv -> {nombre del factor: ticker de Yahoo}
+FACTORES = {a: dict(f) for a, f in _CONF.get("factores", {}).items()}
 
 
-# Factores sectoriales: activos de referencia que explican una posición mejor que las variables
-# de estado (contrastados en analisis/candidatas.ipynb). No son variables generales: son la capa
-# intermedia entre las variables macro y cada activo (mercado → sector → activo).
-#   posición -> {nombre del factor: ticker de Yahoo}
-FACTORES = {
-    "VanEck Rare Earth": {"Baterías y litio": "LIT", "Mineras globales": "PICK", "Bolsa china": "MCHI"},
-    "ETH": {"Nasdaq 100": "QQQ"},          # relación desde 2022
-    "BTC (WBTC)": {"Nasdaq 100": "QQQ"},   # relación desde 2022
-}
+def problemas_variables(variables=None, diarias=None, cestas=None):
+    """Errores de forma de control/variables.toml. Lista vacía = todo bien."""
+    variables = _CONF.get("variables", {}) if variables is None else variables
+    diarias = _CONF.get("diarias", {}) if diarias is None else diarias
+    cestas = _CONF.get("cestas", {}) if cestas is None else cestas
+    p = []
+    if not any(v.get("matriz", True) for v in variables.values()):
+        p.append("variables.toml: ninguna variable entra en la matriz (matriz = true)")
+    for n, v in variables.items():
+        if v.get("fuente") not in FUENTES:
+            p.append(f"variables.toml: {n!r} tiene fuente {v.get('fuente')!r} (válidas: {', '.join(FUENTES)})")
+        if not v.get("codigo"):
+            p.append(f"variables.toml: {n!r} no tiene codigo")
+        if v.get("cambio") not in CAMBIOS:
+            p.append(f"variables.toml: {n!r} tiene cambio {v.get('cambio')!r} (válidos: {', '.join(CAMBIOS)})")
+    for n, d in diarias.items():
+        if not d.get("ticker"):
+            p.append(f"variables.toml: la aproximación diaria {n!r} no tiene ticker")
+        if d.get("cambio") not in CAMBIOS:
+            p.append(f"variables.toml: la aproximación diaria {n!r} tiene cambio {d.get('cambio')!r}")
+        if d.get("variable") and d["variable"] not in variables:
+            p.append(f"variables.toml: la aproximación diaria {n!r} apunta a la variable {d['variable']!r}, que no existe")
+        if d.get("signo", 1) not in (1, -1):
+            p.append(f"variables.toml: la aproximación diaria {n!r} tiene signo {d.get('signo')!r} (1 o -1)")
+    for n, c in cestas.items():
+        if not c:
+            p.append(f"variables.toml: la cesta {n!r} está vacía")
+    return p
 
 
 def leer_matriz(ruta=None, columnas=("efecto_actual", "parcial_actual", "lectura")):
     """Lee analisis/exposiciones.csv y comprueba que tiene el formato y las variables actuales.
 
-    Si la generó una versión anterior del cuaderno (p. ej., un núcleo de Jupyter abierto antes de un
-    cambio de código), falla con un mensaje claro en vez de con un error de columna."""
+    Si se generó con otras variables (se cambió control/variables.toml y no se regeneró) o con una versión
+    anterior del código, falla con un mensaje claro en vez de con un error de columna."""
     import pandas as pd
     from nucleo.rutas import MATRIZ
     exp = pd.read_csv(ruta or MATRIZ)
@@ -100,9 +111,10 @@ def leer_matriz(ruta=None, columnas=("efecto_actual", "parcial_actual", "lectura
     sobran, ausentes = set(exp.variable) - esperadas, esperadas - set(exp.variable)
     if faltan or sobran or ausentes:
         raise RuntimeError(
-            "exposiciones.csv no corresponde al código actual "
+            "exposiciones.csv no corresponde a las variables de control/variables.toml o al código actual "
             f"(faltan columnas {faltan or '-'}; variables de más {sorted(sobran) or '-'}; "
-            f"de menos {sorted(ausentes) or '-'}): reinicia el núcleo y reejecuta analisis/exposiciones.ipynb")
+            f"de menos {sorted(ausentes) or '-'}): regenera la matriz con python -m nucleo.exposiciones "
+            "(en un cuaderno, reinicia antes el núcleo)")
     return exp
 
 
@@ -112,11 +124,11 @@ def coherencia(activos_bot=(), matriz=None, filas=None):
 
     `activos_bot`: config.ACTIVOS (sus `posicion` deben existir en la cartera; si una regla tiene
     `en_cartera`, debe decir a qué posición corresponde). `matriz`: DataFrame de exposiciones.csv
-    (cada posición debe tener filas; si no, falta reejecutar analisis/exposiciones.ipynb).
+    (cada posición debe tener filas; si no, falta regenerar la matriz con python -m nucleo.exposiciones).
     `filas`: filas de la cartera (por defecto, las de cartera.csv; sirve para las pruebas)."""
     filas = _CARTERA if filas is None else filas
     nombres = [f.get("activo", "") for f in filas]
-    problemas = []
+    problemas = problemas_variables() if filas is _CARTERA else []
     if filas and (faltan := [c for c in COLUMNAS_CARTERA if c not in filas[0]]):
         problemas.append(f"cartera.csv: faltan columnas {faltan}")
     if (repetidos := sorted({n for n in nombres if nombres.count(n) > 1})):
@@ -134,7 +146,7 @@ def coherencia(activos_bot=(), matriz=None, filas=None):
         problemas.append(f"cartera.csv: peso no válido ({e})")
     for activo in FACTORES:
         if activo not in nombres:
-            problemas.append(f"universo.FACTORES: {activo!r} no está en cartera.csv")
+            problemas.append(f"variables.toml: el factor de {activo!r} apunta a una posición que no está en cartera.csv")
     for a in activos_bot:
         posicion = getattr(a, "posicion", None)
         if posicion and posicion not in nombres:
@@ -145,5 +157,21 @@ def coherencia(activos_bot=(), matriz=None, filas=None):
     if matriz is not None:
         en_matriz = set(matriz.activo)
         if (sin := [n for n in nombres if n not in en_matriz]):
-            problemas.append(f"exposiciones.csv: sin filas para {sin}: reejecuta analisis/exposiciones.ipynb")
+            problemas.append(f"exposiciones.csv: sin filas para {sin}: regenera la matriz: python -m nucleo.exposiciones")
     return problemas
+
+
+if __name__ == "__main__":
+    print(f"Variables de estado ({VARIABLES_TOML.name}):")
+    for n, (fuente, codigo, cambio, matriz) in VARIABLES.items():
+        print(f"  {n:<26} {fuente}:{codigo:<14} {cambio}  {'matriz' if matriz else 'solo informe'}")
+    print("Aproximaciones diarias:")
+    for n, (ticker, cambio, var, signo) in DIARIAS.items():
+        print(f"  {n:<26} {ticker:<12} → {var or '(informativa)'}{'' if signo == 1 else ' (signo -)'}")
+    print("Factores:", "; ".join(f"{a} ← {', '.join(f)}" for a, f in FACTORES.items()) or "ninguno")
+    try:
+        problemas = coherencia(matriz=leer_matriz())
+    except RuntimeError as e:  # matriz generada con otras variables
+        problemas = coherencia() + [str(e)]
+    print("\n" + ("✅ Todo cuadra (variables, cartera y matriz; las reglas del bot las comprueban las pruebas y el "
+                   "informe semanal)" if not problemas else "Problemas:\n" + "\n".join("  · " + x for x in problemas)))

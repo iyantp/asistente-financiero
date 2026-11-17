@@ -11,12 +11,16 @@ Code, configuration and messages are in Spanish. Key terms: *activo* = asset, *c
 1. [Data](#data)
 2. [Alerts: rules per asset](#alerts-rules-per-asset)
 3. [Messages](#messages)
-4. [Reports](#reports)
-5. [Discipline: limits, log and shadow portfolio](#discipline-limits-log-and-shadow-portfolio)
-6. [Step-by-step setup](#step-by-step-setup)
-7. [Scheduling the runs](#scheduling-the-runs)
-8. [Adapting the system to your portfolio](#adapting-the-system-to-your-portfolio)
-9. [Dependencies](#dependencies)
+4. [Market variables and exposure matrix](#market-variables-and-exposure-matrix)
+5. [Reports](#reports)
+6. [Language model](#language-model)
+7. [Discipline: limits, log and shadow portfolio](#discipline-limits-log-and-shadow-portfolio)
+8. [Step-by-step setup](#step-by-step-setup)
+9. [Scheduling the runs](#scheduling-the-runs)
+10. [Adapting the system to your portfolio](#adapting-the-system-to-your-portfolio)
+11. [Dependencies](#dependencies)
+
+Everything configurable has an example value (mine): anything you don't change stays that way.
 
 ## Data
 
@@ -26,7 +30,7 @@ Code, configuration and messages are in Spanish. Key terms: *activo* = asset, *c
 
 ## Alerts: rules per asset
 
-Each asset in `bot/config.py` is an `Activo(name, ticker, divisa=…, …)` and can have four kinds of rule. All of them use **conditions** from `nucleo/indicadores.py`, evaluated on daily closes (in euros if the asset has a `divisa`):
+The rules are yours: each asset in `bot/config.py` is an `Activo(name, ticker, divisa=…, …)` on any Yahoo Finance ticker (stocks, ETFs, indices, currencies, commodities, crypto), and can have four kinds of rule. All of them use **conditions** from `nucleo/indicadores.py`, evaluated on daily closes (in euros if the asset has a `divisa`):
 
 | Rule | Purpose | Alert |
 |---|---|---|
@@ -43,14 +47,25 @@ Available conditions (extensible with a new class in `nucleo/indicadores.py` plu
 |---|---|
 | `Cruce(a, b)` | the `a`-session average is above the `b`-session average (`a=1` is the price) |
 | `Nivel(x, encima=True)` | the price is above (or below) `x` |
+| `Variacion(-0.03)` / `Variacion(0.1, ventana=5)` | the price falls 3 % or more in one session / rises 10 % or more in 5 sessions |
 | `CaidaDesdeMaximo(0.2, 252)` | the price has fallen 20 % or more from its 252-session high |
+| `MaximoMovil(252)` | the close is above the maximum of the previous 252 closes (new one-year high) |
 | `MinimoMovil(60)` | the close is below the minimum of the previous 60 closes |
 | `SinNuevoMinimo(5, 60)` | at least 5 sessions have passed since the last 60-session low |
 | `No(c)` | `c` is false |
 | `Todas((c1, c2, …), descripcion=(yes, no))` | all are true (`descripcion`, optional, is the message text) |
 | `Alguna((c1, c2, …), descripcion=(yes, no))` | at least one is true |
 
-Example, a position with a strategy and an early exit:
+Examples:
+
+```python
+Activo("Apple", "AAPL", alarma=Nivel(250))                                     # price goes above $250
+Activo("Nasdaq 100", "QQQ", alarma=Variacion(-0.03))                           # falls 3 % or more in a day
+Activo("Bitcoin", "BTC-USD", continuo=True, alarma=MaximoMovil(252))           # new one-year high
+Activo("Oro", "GLD", seguimiento={"Corto": Cruce(6, 20), "Largo": Cruce(70, 200)})   # custom trends
+```
+
+A position with a strategy and an early exit:
 
 ```python
 Activo("Tierras raras (€)", "REMX", divisa="EURUSD=X",
@@ -72,6 +87,19 @@ Activo("Tierras raras (€)", "REMX", divisa="EURUSD=X",
 - 🔑 **Renew the token**: if you set `TOKEN_CADUCA`, starting 14 days before it expires.
 - ❌ **Error**: something failed; the run shows up red in GitHub Actions.
 
+## Market variables and exposure matrix
+
+The method is fixed; the variables are configuration. `control/variables.toml` defines:
+
+- **`[variables]`**: the state variables, each with its source (`fred` or `yahoo`), its code, how its change is measured (`dif` for rates and spreads, `log` for prices), whether it enters the matrix and, optionally, a short name and what a rise means (passed to the model that classifies news).
+- **`[diarias]`**: proxies with fresh daily data, used to check whether a variable actually moved on the day of a story (FRED publishes with a lag). They can be a ticker or a **basket** (`[cestas]`: weighted sum of log changes).
+- **`[factores]`**: reference assets that explain a position better than the general variables (for example, lithium for a rare-earths ETF). They are tracked in the weekly report and guide the daily brief.
+- **`[parametros]`**: sample start and regime-change date.
+
+From the variables, `python -m nucleo.exposiciones` computes the **exposure matrix** (`analisis/exposiciones.csv`): for each portfolio asset and each variable, how much the asset moves in a week when the variable moves by one standard deviation. It gives two readings: the **typical effect** (simple regression, including how the other variables usually move at the same time; used by the daily brief for news) and the **direct exposure** (multiple regression, holding the others fixed; used by the weekly report to attribute the week). The full method is documented in [`nucleo/exposiciones.py`](../nucleo/exposiciones.py).
+
+Regenerate the matrix when you change the variables or the portfolio, and every quarter. `python -m nucleo.universo` checks that the file is well formed and that everything agrees; if the matrix does not match the current variables, the programs say so instead of failing without explanation.
+
 ## Reports
 
 | Report | Contents |
@@ -81,6 +109,35 @@ Activo("Tierras raras (€)", "REMX", divisa="EURUSD=X",
 
 The state-variable framework, the exposure matrix and the news-filtering protocol are in [`conocimiento/mercado.md`](../conocimiento/mercado.md) (in Spanish).
 
+## Language model
+
+Only the daily brief uses it, and only to group and classify headlines. It is configured in `bot/config.py`:
+
+| Option | What it is | Default |
+|---|---|---|
+| `DIARIO_PROVEEDOR` | `"anthropic"` or `"openai"`; the latter works with any OpenAI-compatible API | `"anthropic"` |
+| `DIARIO_MODELO` | Model name at that provider | `"claude-sonnet-4-5"` |
+| `DIARIO_URL` | API URL; `None` = the provider's official one | `None` |
+| `DIARIO_CLAVE` | Name of the environment variable (and GitHub secret) holding the key | the provider's usual one |
+| `DIARIO_PARAMETROS` | Extra or replaced request fields; `None` removes one | `{}` |
+| `DIARIO_INVERSOR`, `DIARIO_EJEMPLOS` | Who the investor is and examples of story → position, for the model's instructions | generic |
+
+Examples:
+
+```python
+# OpenAI
+DIARIO_PROVEEDOR, DIARIO_MODELO, DIARIO_CLAVE = "openai", "gpt-4o-mini", "OPENAI_API_KEY"
+# Google Gemini (OpenAI-compatible API)
+DIARIO_PROVEEDOR, DIARIO_MODELO = "openai", "gemini-2.5-flash"
+DIARIO_URL, DIARIO_CLAVE = "https://generativelanguage.googleapis.com/v1beta/openai", "LLM_API_KEY"
+# Ollama on your computer (no key; local testing only, GitHub Actions cannot reach it)
+DIARIO_PROVEEDOR, DIARIO_MODELO, DIARIO_URL = "openai", "llama3.1", "http://localhost:11434/v1"
+# OpenAI reasoning models, which accept neither temperature nor max_tokens
+DIARIO_PARAMETROS = {"temperature": None, "max_tokens": None, "max_completion_tokens": 4000}
+```
+
+The `diario` workflow passes the `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `LLM_API_KEY` secrets to the program: create the one named in `DIARIO_CLAVE`. Model names change over time; if one is retired, the brief warns on Telegram with a hint of what to change.
+
 ## Discipline: limits, log and shadow portfolio
 
 | Tool | What it does | How to use it |
@@ -89,7 +146,6 @@ The state-variable framework, the exposure matrix and the news-filtering protoco
 | **Decision log** (`nucleo/registro.py`) | Every alert and every story in the daily brief (including the discarded ones, as a control) is logged with the expected price direction, the variable and its $z$. | `python analisis/evaluar_registro.py`: what the price did afterwards. With few rows nothing can be concluded. |
 | **Shadow portfolio** (`nucleo/sombra.py`, `SOMBRA` in `bot/config.py`) | Tracks ideas without real money, with an exit rule from day one: a condition from `indicadores.py`, maximum drawdown from the peak, `stop` (fixed drop from the entry price) or a time limit. Costs are deducted (`coste` is mandatory). | Add a `Sombra(...)` to `SOMBRA`; it appears in the weekly report. Locally, `python bot/informe.py --sombra`. |
 | **Costs** (`nucleo/costes.py`) | Commissions per platform (in the example: ETFs at 0.12 %, minimum €1, maximum €25, FX conversion 0.30 %; funds free of charge). | `python -m nucleo.costes 5000` or `python -m nucleo.costes 100 divisa`. |
-| **Out-of-sample validation** (`analisis/validacion.py`) | Walk-forward test of the moving-average rule: choose on the previous years, test on the next segment. While out of the market, cash earns 3-month Euribor rather than 0 %. | `python analisis/validacion.py SPY EURUSD=X` |
 
 ## Step-by-step setup
 
@@ -105,9 +161,9 @@ Fork it on GitHub (or create a repository from a copy). If you are going to ente
 2. Open a chat with your new bot and send it any message.
 3. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates` in your browser: in the response, `"chat":{"id": …}` is your **chat_id**.
 
-### 3. (Optional) Anthropic API key
+### 3. (Optional) Language model key
 
-Only needed for the daily brief. Create a key at [console.anthropic.com](https://console.anthropic.com) and add credit. The model is set in `bot/config.py` (`DIARIO_MODELO`). Each brief is a single call with at most 80 headlines.
+Only needed for the daily brief. By default it uses Anthropic: create a key at [console.anthropic.com](https://console.anthropic.com) and add credit. For another provider, see [Language model](#language-model). Each brief is a single call with at most 80 headlines.
 
 ### 4. Add the secrets
 
@@ -117,7 +173,7 @@ In your repository: *Settings → Secrets and variables → Actions → New repo
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | all |
 | `TELEGRAM_CHAT_ID` | all |
-| `ANTHROPIC_API_KEY` | daily brief |
+| `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY` or `LLM_API_KEY`, whichever `DIARIO_CLAVE` names) | daily brief |
 
 Locally, copy `.env.example` to `.env` and fill it in (`.env` is in `.gitignore`).
 
@@ -152,22 +208,28 @@ Note that GitHub does not guarantee the time. In my case it delayed runs by seve
    - Expected response: `204`. Turn on email notification on failure.
 3. Put the token's expiry date in `TOKEN_CADUCA` (`bot/config.py`): the alerts will remind you 14 days in advance. If the token expires, the bot stops running without any warning.
 
-My schedule (Europe/Madrid): `diario` Monday to Friday at 06:20; `informe` on Mondays at 06:40; `alertas` every day at 23:15, after the US close.
+The schedule is up to you, with two constraints imposed by the programs:
+
+- **`alertas`**: after the US close (16:00 in New York: 21:00 UTC, or 20:00 UTC during US daylight saving time) and before 00:00 UTC. It compares the latest candle with the current UTC date: if it runs after midnight UTC, it will not report that day's stock-market changes.
+- **`diario`**: it reads the headlines published since the previous business day's Wall Street close, so it makes sense before the open.
+
+The `informe` can run on any day; it summarises the last full week. Example schedule (Europe/Madrid): `diario` Monday to Friday at 06:20; `informe` on Mondays at 06:40; `alertas` every day at 23:15. The day of the alerts' weekly summary is `DIA_RESUMEN` in `bot/config.py` (Friday by default).
 
 ## Adapting the system to your portfolio
 
 | If you change… | Do this |
 |---|---|
-| A position | Its row in `control/cartera.csv` (name, block, weight, short name, Yahoo ticker that proxies it, currency) and its strategy in `control/cartera.md`. Then re-run `analisis/exposiciones.ipynb` to regenerate the matrix. |
+| A position | Its row in `control/cartera.csv` (name, block, weight, short name, Yahoo ticker that proxies it, currency) and its strategy in `control/cartera.md`. Then run `python -m nucleo.exposiciones` to regenerate the matrix. |
 | A bot rule | `bot/config.py` (with `posicion=` if it belongs to a portfolio position). |
 | A kind of condition | A class in `nucleo/indicadores.py` with `serie()`, `describir()` and `sesiones`, plus its test in `tests/`. |
-| A state variable or a sector factor | `nucleo/universo.py`, with its explanation in `conocimiento/mercado.md`. |
+| A state variable, a daily proxy or a sector factor | `control/variables.toml`; then `python -m nucleo.exposiciones`. It is worth explaining why in `conocimiento/mercado.md`. |
 | The profile limits | `nucleo/limites.py` and `control/perfil.md`. |
 | Commissions | `nucleo/costes.py`. |
 | News sources | `FUENTES_RSS` in `bot/config.py`. |
+| The language model | `DIARIO_*` in `bot/config.py` (see [Language model](#language-model)). |
 | A new file read by the code | Its path in `nucleo/rutas.py`, and nowhere else. |
 
-After any change: `python tests/test_reglas.py`. The test `test_coherencia_de_los_archivos_reales` checks that the portfolio, the matrix and the bot's rules agree with one another.
+After any change: `python -m nucleo.universo` (does everything agree?) and `python tests/test_reglas.py`. The test `test_coherencia_de_los_archivos_reales` checks that the portfolio, the variables, the matrix and the bot's rules agree with one another.
 
 Maintenance: `control/calendario.csv` every quarter, and the exposure matrix every quarter or whenever a new asset is added.
 

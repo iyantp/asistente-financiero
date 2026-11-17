@@ -14,8 +14,11 @@ Reparto de tareas para que el resultado sea consistente:
     dato. Si la variable no tiene dato diario, se usa la marca de sorpresa del modelo.
 Si algo falla (por ejemplo, sin saldo en la API), avisa por Telegram.
 
+Configurable sin tocar este archivo: las variables, aproximaciones diarias y factores (control/variables.toml),
+las fuentes RSS, el proveedor y el modelo de lenguaje y el texto que describe al inversor (bot/config.py).
+
 Prueba de consistencia en local:  python bot/diario.py --prueba 3 [--modelo claude-haiku-4-5]
-Demo sin Telegram:  python bot/diario.py --demo   (necesita ANTHROPIC_API_KEY; imprime el resumen y no escribe en registro/)
+Demo sin Telegram:  python bot/diario.py --demo   (necesita la clave del modelo; imprime el resumen y no escribe en registro/)
 (clasifica los mismos titulares varias veces y mide la coincidencia; no envía nada).
 """
 import argparse
@@ -33,23 +36,33 @@ import numpy as np
 import pandas as pd
 import requests
 
-from config import DIARIO_MAX_TITULARES, DIARIO_MODELO, FUENTES_RSS
+import config
+import llm
 from telegram import DEMO, comprobar_secretos, enviar
 
 from nucleo import registro
 from nucleo.datos import precios
 from nucleo.rutas import CARTERA, CARTERA_CSV, MATRIZ
 from nucleo.universo import ACTIVOS as UNIVERSO_ACTIVOS
-from nucleo.universo import CESTA_DOLAR, CORTO, DIARIAS, FACTORES, INICIO, VARIABLES, leer_matriz
+from nucleo.universo import CESTAS, CORTO, DIARIAS, FACTORES, INICIO, SIGNIFICADO, VARIABLES, leer_matriz
 
-API = "https://api.anthropic.com/v1/messages"
+# Configuración de bot/config.py; lo que no esté definido allí toma estos valores.
+FUENTES_RSS = getattr(config, "FUENTES_RSS", {})
+DIARIO_MAX_TITULARES = getattr(config, "DIARIO_MAX_TITULARES", 80)
+DIARIO_PROVEEDOR = getattr(config, "DIARIO_PROVEEDOR", "anthropic")   # "anthropic" u "openai" (o compatible)
+DIARIO_MODELO = getattr(config, "DIARIO_MODELO", "claude-sonnet-4-5")
+DIARIO_URL = getattr(config, "DIARIO_URL", None)                      # None = la URL oficial del proveedor
+DIARIO_CLAVE = getattr(config, "DIARIO_CLAVE", None) or llm.PROVEEDORES[DIARIO_PROVEEDOR][1]  # variable de entorno
+DIARIO_PARAMETROS = getattr(config, "DIARIO_PARAMETROS", {})          # campos extra o sustituidos de la petición
+DIARIO_INVERSOR = getattr(config, "DIARIO_INVERSOR", "un inversor particular")
+DIARIO_EJEMPLOS = getattr(config, "DIARIO_EJEMPLOS", "")
 VARIABLES_MATRIZ = [n for n, v in VARIABLES.items() if v[3]]
 OTRAS = ["Sentimiento", "ninguna"]
 UMBRAL_Z = 1.5   # |z| mínimo del movimiento diario para dar por movida una variable (≈ 13 % de los días)
 UMBRAL_CARTERA = 0.001  # efecto típico mínimo en la cartera (0,1 % por σ semanal) para que importe
 ACTIVOS_CARTERA = list(pd.read_csv(CARTERA_CSV).activo)
 
-INSTRUCCIONES = """Eres el documentalista de noticias financieras de Iyán, inversor particular español. \
+INSTRUCCIONES = """Eres el documentalista de noticias financieras de {inversor}. \
 Recibes una lista numerada de titulares recientes. Tu trabajo es AGRUPAR y CLASIFICAR; la decisión de \
 qué es relevante la toma después un programa con reglas fijas. Sé consistente: ante la misma noticia, \
 la misma clasificación.
@@ -61,15 +74,13 @@ pequeñas, noticias sin novedad).
 - "variable": la variable de estado que mueve principalmente. DEBE ser exactamente una de: {variables}. \
 Usa "ninguna" si no mueve ninguna de forma clara (p. ej., noticias de una sola empresa sin efecto macro, \
 hackeos de plataformas, nombramientos a largo plazo).
-- "direccion": "sube" o "baja" (en Dólar (EUR/USD), "sube" = el euro se fortalece; en Dólar amplio, "sube" = \
-el dólar se fortalece frente a una cesta mundial; en Estrés de crédito, "sube" = más estrés; Tipo 2a = \
-expectativas sobre la Fed, "sube" = Fed más dura).
+- "direccion": "sube" o "baja"{significados}.
 - "sorpresa": true solo si el titular indica que el dato o hecho se aparta de lo esperado.
 - "impacto": "alto" (aparece en varias fuentes, mueve índices > 1 % o es un dato macro clave o una \
 decisión de un banco central), "medio" o "bajo".
 - "activo": si la noticia afecta DIRECTAMENTE a una de las posiciones de la cartera (por su sector o \
 por el propio activo, aunque no mueva ninguna variable macro), su nombre exacto entre: {activos}; si no, null. \
-Ejemplos: resultados de grandes tecnológicas → "Fidelity Global Tech"; noticias de Bitcoin → "BTC (WBTC)". Factores sectoriales conocidos de cada posición \
+{ejemplos}Factores sectoriales conocidos de cada posición \
 (una noticia que mueve el factor afecta directamente a la posición): {factores}.
 - "efecto_activo": "sube" o "baja" (efecto esperado en el precio de ese activo), o null.
 - "titular": máximo 10 palabras, en español, sin Markdown.
@@ -81,9 +92,13 @@ cartera.md; si no, null. No inventes datos que no estén en los titulares.
 Responde ÚNICAMENTE con un objeto JSON válido, sin texto antes ni después:
 {{"noticias": [{{"titular": "...", "variable": "...", "direccion": "sube", "sorpresa": false, \
 "impacto": "alto", "activo": null, "efecto_activo": null, "ids": [1, 4]}}], "tesis": null}}
-""".format(variables=", ".join(f'"{v}"' for v in VARIABLES_MATRIZ + OTRAS),
+""".format(inversor=DIARIO_INVERSOR,
+           variables=", ".join(f'"{v}"' for v in VARIABLES_MATRIZ + OTRAS),
+           significados=(" (" + "; ".join(f'en {v}, "sube" = {t}' for v, t in SIGNIFICADO.items()
+                                          if v in VARIABLES_MATRIZ) + ")") if SIGNIFICADO else "",
            activos=", ".join(f'"{a}"' for a in ACTIVOS_CARTERA),
-           factores="; ".join(f'"{a}" ← {", ".join(f)}' for a, f in FACTORES.items()))
+           ejemplos=f"Ejemplos: {DIARIO_EJEMPLOS}. " if DIARIO_EJEMPLOS else "",
+           factores="; ".join(f'"{a}" ← {", ".join(f)}' for a, f in FACTORES.items()) or "ninguno")
 
 
 # --- Titulares ---------------------------------------------------------------
@@ -160,10 +175,10 @@ def leer(ruta):
 
 
 def _cambios_diarios(ticker, tipo):
-    """Cambios diarios de una aproximación de universo.DIARIAS (la cesta del dólar se construye aquí)."""
-    if ticker == "CESTA_DOLAR":
-        partes = {t: np.log(precios(t, periodo="max")).diff() for t in CESTA_DOLAR}
-        return sum(w * partes[t] for t, w in CESTA_DOLAR.items()).dropna()
+    """Cambios diarios de una aproximación de universo.DIARIAS (las cestas se construyen aquí)."""
+    if ticker in CESTAS:
+        partes = {t: np.log(precios(t, periodo="max")).diff() for t in CESTAS[ticker]}
+        return sum(w * partes[t] for t, w in CESTAS[ticker].items()).dropna()
     nivel = precios(ticker, periodo="max").dropna()
     return nivel.diff() if tipo == "dif" else np.log(nivel).diff()
 
@@ -217,20 +232,9 @@ def contexto(hoy, lista, vars_txt):
 
 
 def clasificar(texto_contexto, modelo):
-    r = requests.post(API, timeout=180, headers={
-        "x-api-key": os.environ["ANTHROPIC_API_KEY"],
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-    }, json={
-        "model": modelo,
-        "max_tokens": 1500,
-        "temperature": 0,
-        "system": INSTRUCCIONES,
-        "messages": [{"role": "user", "content": texto_contexto + "\n\nAgrupa y clasifica."}],
-    })
-    if r.status_code != 200:
-        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:500]}")
-    texto = "".join(b.get("text", "") for b in r.json()["content"] if b["type"] == "text").strip()
+    texto = llm.completar(INSTRUCCIONES, texto_contexto + "\n\nAgrupa y clasifica.", proveedor=DIARIO_PROVEEDOR,
+                          modelo=modelo, url=DIARIO_URL, clave=os.environ.get(DIARIO_CLAVE, ""),
+                          max_tokens=1500, temperatura=0, parametros=DIARIO_PARAMETROS)
     inicio, fin = texto.find("{"), texto.rfind("}")
     if inicio < 0 or fin < 0:
         raise RuntimeError(f"la respuesta no es JSON: {texto[:200]}")
@@ -368,14 +372,16 @@ def componer(datos, lista, caidas, hoy, zvar):
 
 def pista(error):
     e = str(error).lower()
-    if "credit balance" in e or "billing" in e:
-        return "Parece que no queda saldo: recarga en console.anthropic.com → Billing."
+    if "credit balance" in e or "billing" in e or "quota" in e or "insufficient" in e:
+        return f"Parece que no queda saldo: recarga en la consola de tu proveedor ({DIARIO_PROVEEDOR})."
     if "401" in e or "authentication" in e or "api key" in e:
-        return "La clave de API no es válida o falta el secret ANTHROPIC_API_KEY en GitHub."
+        return f"La clave de API no es válida o falta el secret {DIARIO_CLAVE} en GitHub (o en .env)."
     if "not_found" in e or "model" in e:
-        return f"Puede que el modelo «{DIARIO_MODELO}» ya no exista: cámbialo en bot/config.py."
-    if "overloaded" in e or "529" in e:
-        return "La API estaba saturada; mañana debería funcionar."
+        return f"Puede que el modelo «{DIARIO_MODELO}» ya no exista: cámbialo en bot/config.py (DIARIO_MODELO)."
+    if "overloaded" in e or "529" in e or "429" in e or "rate" in e:
+        return "La API estaba saturada o se superó su límite de uso; mañana debería funcionar."
+    if "400" in e and ("max_tokens" in e or "temperature" in e or "unsupported" in e):
+        return "El modelo no acepta algún parámetro: ajústalo con DIARIO_PARAMETROS en bot/config.py (ver docs/bot.md)."
     if "json" in e:
         return "El modelo no respetó el formato; suele ser puntual. Si se repite, revisa las instrucciones."
     if "titulares" in e:
@@ -422,8 +428,8 @@ def main():
     comprobar_secretos()
     ahora = datetime.now(timezone.utc)
     try:
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            raise RuntimeError("falta ANTHROPIC_API_KEY (401)")
+        if not os.environ.get(DIARIO_CLAVE) and DIARIO_URL is None:  # con URL propia (p. ej., Ollama) puede no hacer falta
+            raise RuntimeError(f"falta {DIARIO_CLAVE} (401)")
         lista, caidas = titulares(ahora)
         if not lista:
             raise RuntimeError(f"no se han obtenido titulares (fuentes caídas: {', '.join(caidas) or 'ninguna'})")

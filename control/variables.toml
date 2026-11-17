@@ -1,0 +1,170 @@
+# Variables de estado: el marco con el que el sistema lee el mercado.
+#
+# El MÉTODO es general: unas pocas variables que mueven a todos los activos; su efecto en cada posición se mide con
+# la matriz de exposición (python -m nucleo.exposiciones); el resumen diario solo deja pasar las noticias que mueven
+# de verdad una de ellas, y el informe semanal explica la semana de la cartera con ellas.
+# Las variables CONCRETAS de este archivo son una elección: cámbialas por las tuyas. Por qué se eligieron estas:
+# conocimiento/mercado.md.
+#
+# Tras cambiar [variables] o la cartera, regenera la matriz:  python -m nucleo.exposiciones
+# Comprobación rápida de este archivo:  python -m nucleo.universo
+
+[parametros]
+inicio = "2012-01-01"          # inicio de la muestra para estandarizar y estimar
+corte_regimen = "2022-01-01"   # cambio de régimen: la matriz se estima también solo desde aquí (régimen actual)
+
+
+# --- Variables de estado ------------------------------------------------------------------------------------------
+# fuente   "fred" (código de una serie de FRED) o "yahoo" (ticker de Yahoo Finance)
+# cambio   "dif" = diferencia (tipos, diferenciales: en puntos) o "log" = cambio logarítmico (precios, índices)
+# matriz   true si entra en la matriz de exposición (por defecto); false = solo se sigue en el informe semanal
+# corto    nombre corto para los mensajes (opcional)
+# sube     qué significa que la variable suba, si no es evidente; se lo dice al modelo que clasifica noticias (opcional)
+
+[variables."Tipos reales 10a"]
+fuente = "fred"
+codigo = "DFII10"
+cambio = "dif"
+corto = "Tipos reales"
+
+[variables."Inflación esperada 10a"]
+fuente = "fred"
+codigo = "T10YIE"
+cambio = "dif"
+corto = "Inflación esperada"
+
+[variables."Tipo 2a"]               # expectativas de política monetaria (Fed)
+fuente = "fred"
+codigo = "DGS2"
+cambio = "dif"
+sube = "Fed más dura (expectativas sobre la Fed)"
+
+[variables."Dólar (EUR/USD)"]
+fuente = "fred"
+codigo = "DEXUSEU"                  # FRED va con una semana de retraso: se completa con Yahoo (nucleo.datos.cambio_eurusd)
+cambio = "log"
+corto = "Euro/dólar"
+sube = "el euro se fortalece"
+
+[variables."Dólar amplio"]           # dólar frente a una cesta mundial
+fuente = "fred"
+codigo = "DTWEXBGS"
+cambio = "log"
+sube = "el dólar se fortalece frente a una cesta mundial"
+
+[variables."Estrés de crédito"]      # diferencial Baa frente al 10 años
+fuente = "fred"
+codigo = "BAA10Y"
+cambio = "dif"
+sube = "más estrés"
+
+[variables."Crecimiento (cobre)"]
+fuente = "yahoo"
+codigo = "HG=F"
+cambio = "log"
+corto = "Cobre"
+
+[variables."Petróleo (Brent)"]
+fuente = "fred"
+codigo = "DCOILBRENTEU"
+cambio = "log"
+corto = "Petróleo"
+
+[variables.VIX]                      # estrés de mercado; solo en los informes
+fuente = "fred"
+codigo = "VIXCLS"
+cambio = "dif"
+matriz = false
+
+
+# --- Aproximaciones diarias ---------------------------------------------------------------------------------------
+# Series con dato diario fresco (Yahoo) para comprobar si una variable se ha movido DE VERDAD el día de una noticia
+# (FRED publica con 1-7 días de retraso). Una variable sin aproximación diaria se juzga por la «sorpresa» que marque
+# el modelo.
+# ticker    ticker de Yahoo, o el nombre de una [cestas.*]
+# cambio    "dif" o "log"
+# variable  variable de [variables] que aproxima (opcional: sin ella, solo se muestra como información)
+# signo     1 si sube cuando sube la variable, -1 si va al revés
+#
+# Notas: ^TNX es el tipo NOMINAL a 10 años (aproxima el movimiento del real, que no tiene dato diario); ZT=F es el
+# precio del futuro del bono a 2 años (sube cuando baja el tipo); los tipos de cambio de Yahoo se comparan tal cual
+# (vela fechada al inicio del día en Londres: el último cambio cubre la sesión de ayer y la noche). La inflación
+# esperada no tiene aproximación diaria.
+
+[diarias."Bono 10a EE. UU. (nominal)"]
+ticker = "^TNX"
+cambio = "dif"
+variable = "Tipos reales 10a"
+signo = 1
+
+[diarias."Futuro bono 2a EE. UU."]
+ticker = "ZT=F"
+cambio = "log"
+variable = "Tipo 2a"
+signo = -1
+
+[diarias."EUR/USD"]
+ticker = "EURUSD=X"
+cambio = "log"
+variable = "Dólar (EUR/USD)"
+signo = 1
+
+[diarias."Dólar amplio (cesta)"]
+ticker = "CESTA_DOLAR"
+cambio = "log"
+variable = "Dólar amplio"
+signo = 1
+
+[diarias."Crédito alto riesgo (HYG)"]
+ticker = "HYG"
+cambio = "log"
+variable = "Estrés de crédito"
+signo = -1
+
+[diarias.VIX]
+ticker = "^VIX"
+cambio = "dif"
+
+[diarias.Cobre]
+ticker = "HG=F"
+cambio = "log"
+variable = "Crecimiento (cobre)"
+signo = 1
+
+[diarias.Brent]
+ticker = "BZ=F"
+cambio = "log"
+variable = "Petróleo (Brent)"
+signo = 1
+
+
+# --- Cestas -------------------------------------------------------------------------------------------------------
+# Aproximación sintética: media ponderada de cambios logarítmicos de varios tickers. Signo: + = sube la cesta.
+# CESTA_DOLAR aproxima el dólar amplio (FRED DTWEXBGS va con una semana de retraso) con las seis mayores divisas del
+# índice de la Fed (pesos aproximados, reescalados a 1). El DXY no sirve: el euro pesa el 58 %.
+
+[cestas.CESTA_DOLAR]
+"EURUSD=X" = -0.268   # dólares por euro: si sube, el dólar se debilita
+"MXN=X" = 0.211       # pesos por dólar
+"CNY=X" = 0.183
+"CAD=X" = 0.183
+"JPY=X" = 0.085
+"GBPUSD=X" = -0.070   # dólares por libra
+
+
+# --- Factores sectoriales -----------------------------------------------------------------------------------------
+# Activos de referencia que explican una posición mejor que las variables de estado: la capa intermedia entre las
+# variables macro y cada activo (mercado → sector → activo). No entran en la matriz; se siguen en el informe semanal
+# y orientan el resumen diario (una noticia que mueve el factor afecta directamente a la posición).
+# [factores."<posición de control/cartera.csv>"]   nombre del factor = ticker de Yahoo
+
+[factores."VanEck Rare Earth"]
+"Baterías y litio" = "LIT"
+"Mineras globales" = "PICK"
+"Bolsa china" = "MCHI"
+
+[factores.ETH]                       # relación desde 2022
+"Nasdaq 100" = "QQQ"
+
+[factores."BTC (WBTC)"]              # relación desde 2022
+"Nasdaq 100" = "QQQ"

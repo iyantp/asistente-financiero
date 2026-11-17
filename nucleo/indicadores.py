@@ -95,6 +95,53 @@ class MinimoMovil:
 
 
 @dataclass(frozen=True)
+class MaximoMovil:
+    """El cierre supera el máximo de los `ventana` cierres anteriores (ruptura de un techo reciente).
+
+    El máximo se calcula con las sesiones anteriores, sin contar la de hoy. Simétrica de MinimoMovil.
+    """
+    ventana: int = 60
+
+    @property
+    def sesiones(self):
+        return self.ventana + 1
+
+    def serie(self, precio):
+        maximo = precio.shift(1).rolling(self.ventana).max()
+        return (precio > maximo)[maximo.notna()]
+
+    def describir(self, cumple):
+        return (f"el precio cierra por encima de su máximo de {self.ventana} sesiones" if cumple
+                else f"el precio vuelve por debajo de su máximo de {self.ventana} sesiones")
+
+
+@dataclass(frozen=True)
+class Variacion:
+    """El precio ha cambiado `pct` o más en las últimas `ventana` sesiones (0,05 = 5 %).
+
+    `pct` positivo: subida de al menos `pct`; negativo: caída de al menos |`pct`|. Con ventana=1, movimiento diario.
+    """
+    pct: float
+    ventana: int = 1
+
+    @property
+    def sesiones(self):
+        return self.ventana + 1
+
+    def serie(self, precio):
+        cambio = precio / precio.shift(self.ventana) - 1
+        cumple = cambio >= self.pct if self.pct >= 0 else cambio <= self.pct
+        return cumple[cambio.notna()]
+
+    def describir(self, cumple):
+        periodo = "en la última sesión" if self.ventana == 1 else f"en {self.ventana} sesiones"
+        cifra = f"{abs(self.pct) * 100:g} %".replace(".", ",")
+        verbo = "sube" if self.pct >= 0 else "cae"
+        return (f"el precio {verbo} un {cifra} o más {periodo}" if cumple
+                else f"el movimiento {periodo} vuelve a ser menor del {cifra}")
+
+
+@dataclass(frozen=True)
 class No:
     """Negación de otra condición (p. ej., alarma cuando una tendencia deja de cumplirse)."""
     condicion: object

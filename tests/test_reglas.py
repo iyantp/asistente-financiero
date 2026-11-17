@@ -12,7 +12,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bot"))  # programas del bot (config, alertas, diario)
 from nucleo import costes, limites, sombra  # noqa: E402
-from nucleo.indicadores import Alguna, CaidaDesdeMaximo, Cruce, MinimoMovil, Nivel, No, SinNuevoMinimo, Todas  # noqa: E402
+from nucleo.indicadores import (Alguna, CaidaDesdeMaximo, Cruce, MaximoMovil, MinimoMovil, Nivel, No,  # noqa: E402
+                                SinNuevoMinimo, Todas, Variacion)
 from nucleo.sombra import Sombra  # noqa: E402
 
 
@@ -325,6 +326,94 @@ def test_coherencia_detecta_errores():
     for texto in ["bloque 'otro'", "'B' no tiene ticker", "suman 90.0", "'X' tiene en_cartera", "'Vendida'",
                   "sin filas para ['B']"]:
         assert texto in p, (texto, p)
+
+
+# --- condiciones añadidas para alertas habituales ----------------------------------------
+
+def test_variacion():
+    p = serie([100, 101, 95, 96, 110])
+    assert list(Variacion(-0.05).serie(p)) == [False, True, False, False]          # 95/101 − 1 = −5,9 %
+    assert list(Variacion(0.10, ventana=2).serie(p)) == [False, False, True]       # 110/95 − 1 = +15,8 %
+    assert Variacion(-0.05).describir(True) == "el precio cae un 5 % o más en la última sesión"
+    assert Variacion(0.1, 5).sesiones == 6
+
+
+def test_maximo_movil():
+    p = serie([100, 101, 95, 96, 110])
+    assert list(MaximoMovil(3).serie(p)) == [False, True]                           # 96 < 101; 110 > máx(101, 95, 96)
+    assert MaximoMovil(3).describir(True) == "el precio cierra por encima de su máximo de 3 sesiones"
+
+
+# --- configuración de variables (control/variables.toml) ----------------------------------
+
+def test_variables_toml_valido():
+    from nucleo.universo import CESTAS, DIARIAS, VARIABLES, problemas_variables
+    assert problemas_variables() == []
+    for ticker, _, var, _ in DIARIAS.values():                                     # cada aproximación apunta a algo real
+        assert var is None or var in VARIABLES
+        assert ticker in CESTAS or "CESTA" not in ticker
+
+
+def test_variables_toml_detecta_errores():
+    from nucleo.universo import problemas_variables
+    variables = {"A": {"fuente": "bloomberg", "codigo": "X", "cambio": "dif"},
+                 "B": {"fuente": "fred", "cambio": "pct", "matriz": False}}
+    diarias = {"d": {"ticker": "T", "cambio": "log", "variable": "Z", "signo": 2}}
+    p = " | ".join(problemas_variables(variables, diarias, {"vacía": {}}))
+    for texto in ["fuente 'bloomberg'", "'B' no tiene codigo", "cambio 'pct'", "variable 'Z'", "signo 2",
+                  "cesta 'vacía'"]:
+        assert texto in p, (texto, p)
+
+
+# --- matriz de exposición (nucleo/exposiciones.py) ------------------------------------------
+
+def test_matriz_recupera_exposiciones_conocidas():
+    from nucleo import exposiciones as ex
+    rng = np.random.default_rng(0)
+    idx = pd.date_range("2015-01-02", periods=600, freq="W-FRI")
+    z = pd.DataFrame(rng.standard_normal((600, 2)), index=idx, columns=["v1", "v2"])
+    rent = pd.DataFrame({"A": 0.01 * z.v1 + 0.002 * rng.standard_normal(600),      # depende de v1, no de v2
+                         "B": -0.005 * z.v2 + 0.002 * rng.standard_normal(600)}, index=idx)
+    est = ex.estimaciones(rent, z)
+    m = ex.matriz(est, fecha="2026-01-01").set_index(["activo", "variable"])
+    assert abs(m.loc[("A", "v1"), "parcial_actual"] - 0.01) < 0.001
+    assert m.loc[("A", "v1"), "lectura"] == "+++" and m.loc[("A", "v2"), "lectura"] == "0"
+    assert m.loc[("B", "v2"), "lectura"] == "−−"                                    # −0,5 %: entre 0,4 % y 1 %
+    assert set(m.columns) >= {"efecto_actual", "parcial_actual", "lectura", "lectura_parcial", "estable"}
+
+
+# --- proveedor del modelo de lenguaje (bot/llm.py) -------------------------------------------
+
+def test_llm_peticion_anthropic():
+    import llm
+    url, cab, cuerpo = llm.peticion("sis", "usu", proveedor="anthropic", modelo="m", clave="k")
+    assert url == "https://api.anthropic.com/v1/messages" and cab["x-api-key"] == "k"
+    assert cuerpo["system"] == "sis" and cuerpo["messages"] == [{"role": "user", "content": "usu"}]
+    assert cuerpo["temperature"] == 0
+    assert llm.texto_respuesta("anthropic", {"content": [{"type": "text", "text": " {} "}]}) == "{}"
+
+
+def test_llm_peticion_compatible_openai():
+    import llm
+    url, cab, cuerpo = llm.peticion("sis", "usu", proveedor="openai", modelo="m", clave="k",
+                                    url="http://localhost:11434/v1/",
+                                    parametros={"max_tokens": None, "max_completion_tokens": 900})
+    assert url == "http://localhost:11434/v1/chat/completions" and cab["authorization"] == "Bearer k"
+    assert cuerpo["messages"][0] == {"role": "system", "content": "sis"}
+    assert "max_tokens" not in cuerpo and cuerpo["max_completion_tokens"] == 900    # None quita, el resto sustituye
+    _, cab, _ = llm.peticion("s", "u", proveedor="openai", modelo="m")              # sin clave (modelo local)
+    assert "authorization" not in cab
+    assert llm.texto_respuesta("openai", {"choices": [{"message": {"content": "hola"}}]}) == "hola"
+
+
+def test_llm_proveedor_desconocido():
+    import llm
+    try:
+        llm.peticion("s", "u", proveedor="otro", modelo="m")
+    except ValueError as e:
+        assert "anthropic" in str(e)
+    else:
+        raise AssertionError("debería fallar")
 
 
 if __name__ == "__main__":

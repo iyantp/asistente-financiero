@@ -30,7 +30,7 @@ Bono a vencimiento: amortigua las caídas de la renta variable cuando bajan los 
 Apuesta de largo plazo con peso pequeño. El bot sigue sus tendencias; no hay regla de salida.
 
 ### Especulación
-**VanEck Rare Earth.** Tesis: la demanda de tierras raras para baterías y defensa y la búsqueda de proveedores fuera de China. Factores que la explican (contrastados en `analisis/candidatas.ipynb`): baterías y litio (LIT), mineras globales (PICK) y bolsa china (MCHI).
+**VanEck Rare Earth.** Tesis: la demanda de tierras raras para baterías y defensa y la búsqueda de proveedores fuera de China. Factores que la explican (en `control/variables.toml`, `[factores]`): baterías y litio (LIT), mineras globales (PICK) y bolsa china (MCHI).
 Salida: cruce a la baja SMA6/SMA70 (`senal` en `bot/config.py`), con salida previa si además marca un nuevo mínimo de 60 sesiones. La tesis se invalida si cambia la política de exportaciones de China.
 
 ## Seguimiento en el bot
