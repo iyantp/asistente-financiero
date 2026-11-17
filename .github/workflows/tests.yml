@@ -1,9 +1,11 @@
 name: tests
 # Comprueba las reglas (tests/) en cada push que toque código o dependencias. Va aparte de los workflows del bot
 # para que un test roto no bloquee las alertas: el fallo se ve en Actions (y GitHub lo avisa por correo).
+# Los cambios de configuración (control/, bot/config.py) los comprueba el workflow matriz, que antes regenera la
+# matriz: si los comprobara también este, fallaría mientras la matriz no esté al día.
 on:
   push:
-    paths: ["nucleo/**", "bot/**", "tests/**", "requirements.lock", "pyproject.toml"]
+    paths: ["nucleo/**", "bot/**", "!bot/config.py", "tests/**", "requirements.lock", "pyproject.toml"]
   workflow_dispatch:
 jobs:
   tests:

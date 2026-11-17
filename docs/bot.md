@@ -71,6 +71,8 @@ Activo("Litio y baterías (€)", "LIT", divisa="EURUSD=X",
        alarma=Todas((No(Cruce(6, 70)), MinimoMovil(60))))
 ```
 
+**Escribirlas y comprobarlas.** `bot/config.py` está separado en bloques (alertas, cartera sombra, noticias y técnico) y lleva en la cabecera esta misma chuleta, así que basta con copiar una línea y cambiarla. También se le puede pedir a una IA en lenguaje normal: el repositorio incluye sus instrucciones (ver [README → El día a día](../README.md#el-día-a-día)). Cada `Activo` comprueba al crearse que sus reglas están bien escritas (una condición sin paréntesis, una fecha que no es `AAAA-MM-DD`, un recordatorio sin alarma…) y, si no, el error dice qué activo y qué regla fallan. Para comprobarlo todo: `python -m nucleo.universo`; para ver los avisos que saldrían hoy sin enviar nada: `python bot/alertas.py --demo`. Al subir un cambio de `bot/config.py`, el workflow `matriz` hace la misma comprobación en GitHub.
+
 **Cuándo se evalúa.** Solo velas cerradas: en bolsa, la sesión del día (fines de semana y festivos no hay sesión nueva); en cripto, la vela del día anterior, que cierra a las 00:00 UTC. El bot no guarda estado: cada ejecución reconstruye las medias con el histórico. Si se salta una ejecución, ese cambio no se avisa, pero el resumen semanal muestra el estado correcto.
 
 ## Mensajes
@@ -154,7 +156,7 @@ Antes de nada, prueba en local con `--demo` (ver el [README](../README.md#pruéb
 
 ### 1. Copia el repositorio
 
-Haz un *fork* en GitHub (o crea un repositorio a partir de una copia). Si vas a poner tus pesos reales, que sea **privado**. Los importes en euros no se versionan nunca: si quieres guardarlos, usa un archivo `*.local.*`, que está en `.gitignore`.
+En la página del repositorio, pulsa **Use this template → Create a new repository** y elige **Private**. Un *fork* de un repositorio público es siempre público, y en tu copia van a estar tus pesos y tus notas. Los importes en euros no se versionan nunca: si quieres guardarlos, usa un archivo `*.local.*`, que está en `.gitignore`.
 
 ### 2. Crea el bot de Telegram
 
@@ -182,7 +184,15 @@ En local, copia `.env.example` a `.env` y rellénalo (`.env` está en `.gitignor
 
 *Actions → alertas → Run workflow*, marcando «resumen», debería mandarte el resumen del estado de cada activo. Haz lo mismo con `informe` y `diario`.
 
-Los workflows `alertas` y `diario` hacen commit de `registro/` al terminar (necesitan `permissions: contents: write`, que ya llevan). Por eso, antes de hacer push en local, conviene hacer `git pull --rebase`.
+Los workflows `alertas` y `diario` hacen commit de `registro/` al terminar, y `matriz` hace commit de la matriz de exposición cuando cambian la cartera o las variables (todos llevan `permissions: contents: write`). Por eso, antes de hacer push en local, conviene hacer `git pull --rebase`.
+
+| Workflow | Cuándo se ejecuta | Qué hace |
+|---|---|---|
+| `alertas` | Cada día (lo programas tú) | Evalúa las reglas y envía los avisos |
+| `diario` | De lunes a viernes (lo programas tú) | Resumen de noticias |
+| `informe` | Una vez por semana (lo programas tú) | Informe semanal |
+| `matriz` | Solo, al subir cambios de `control/` o `bot/config.py` | Regenera la matriz si cambian la cartera o las variables y comprueba que toda la configuración cuadra |
+| `tests` | Solo, al subir cambios de código | Pruebas sin red |
 
 ## Programar las ejecuciones
 
@@ -220,19 +230,19 @@ El `informe` puede ir cualquier día; resume la última semana completa. Horario
 
 | Si cambias… | Haz esto |
 |---|---|
-| Una posición | Su fila en `control/cartera.csv` (nombre, bloque, peso, nombre corto, ticker de Yahoo que la aproxima, divisa: vacía si ya está en tu moneda) y su tesis en `control/cartera.md`. Después, `python -m nucleo.exposiciones` para regenerar la matriz. |
+| Una posición | Su fila en `control/cartera.csv` (nombre, bloque, peso, nombre corto, ticker de Yahoo que la aproxima, divisa: vacía si ya está en tu moneda) y su tesis en `control/cartera.md`. La matriz se regenera sola al subir el cambio (workflow `matriz`); en local, `python -m nucleo.exposiciones`. |
 | Una regla del bot | `bot/config.py` (con `posicion=` si es de una posición de la cartera). |
 | Un tipo de condición | Una clase en `nucleo/indicadores.py` con `serie()`, `describir()` y `sesiones`, y su prueba en `tests/`. |
-| Una variable general o una aproximación diaria | `control/variables.toml`; después, `python -m nucleo.exposiciones`. |
+| Una variable general o una aproximación diaria | `control/variables.toml` (la matriz se regenera sola al subirlo; en local, `python -m nucleo.exposiciones`). |
 | Un factor específico | Su fila en `control/especificos.csv`. |
 | Los bloques, los límites o las comisiones | `control/perfil.toml`. |
 | Fuentes de noticias | `FUENTES_RSS` en `bot/config.py`. |
 | El modelo de lenguaje | `DIARIO_*` en `bot/config.py` (ver [Modelo de lenguaje](#modelo-de-lenguaje)). |
 | Un archivo nuevo que lea el código | Su ruta en `nucleo/rutas.py`, y en ningún otro sitio. |
 
-Tras cualquier cambio: `python -m nucleo.universo` (¿cuadra todo?) y `python tests/test_reglas.py`. La prueba `test_coherencia_de_los_archivos_reales` comprueba que la cartera, las variables, la matriz y las reglas del bot cuadran entre sí.
+Tras cualquier cambio: `python -m nucleo.universo` (¿cuadran cartera, perfil, variables, matriz y reglas del bot?) y `python tests/test_reglas.py`. La prueba `test_coherencia_de_los_archivos_reales` comprueba que la cartera, las variables, la matriz y las reglas del bot cuadran entre sí.
 
-Mantenimiento: `control/calendario.csv` cada trimestre y la matriz de exposición cada trimestre o al entrar un activo nuevo.
+Mantenimiento: `control/calendario.csv` cada trimestre, y la matriz de exposición cada trimestre (*Actions → matriz → Run workflow*); al entrar un activo nuevo se regenera sola.
 
 ## Dependencias
 

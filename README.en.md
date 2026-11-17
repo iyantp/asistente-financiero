@@ -12,7 +12,7 @@ An assistant that watches your investments and messages you on Telegram **only w
 2. **A filtered news brief.** Every morning it reads the headlines from the sources you choose and sends you only the ones that affect what you hold, with the reason why. An AI sorts the headlines; fixed rules decide what matters to you, so it is predictable.
 3. **A system to understand what moves your portfolio.** It measures how the big market variables (interest rates, the dollar, inflation, oil…) affect each of your assets, and how your assets relate to one another. Every Monday a report explains what moved your portfolio that week.
 
-> Everything personal is configuration: your portfolio, your rules, your sources, your variables and the AI provider. What you see here is **my configuration, as an example**: anything you don't change stays as it is. The portfolio weights are made up. Nothing here is financial advice.
+> Everything personal is configuration: your portfolio, your rules, your sources, your variables and the AI provider. What you see here is **an example configuration**, with a typical made-up portfolio: anything you don't change stays as it is. Nothing here is financial advice.
 
 ## Why it exists
 
@@ -63,33 +63,61 @@ Code, configuration and messages are in Spanish, as it started as a personal too
 | Your portfolio blocks, risk limits and broker commissions | `control/perfil.toml` |
 | The week's events (Fed, ECB, CPI…) | `control/calendario.csv` |
 | When each message arrives | Whichever scheduler you use (see the guide) |
+| Instructions for an AI to maintain all of the above | `ia/asistente-financiero/SKILL.md` (see [Day to day](#day-to-day)) |
 
 ### Your alert rules
 
-Each rule is one line in `bot/config.py`:
+Each rule is one line in `bot/config.py`, which is built for exactly that: at the top it has a cheat sheet with every condition, and below it the rules, kept apart from everything else. For example:
 
 ```python
-Activo("Apple", "AAPL", alarma=Nivel(250)),                               # price goes above $250
-Activo("Nasdaq 100", "QQQ", alarma=Variacion(-0.03)),                     # falls 3 % or more in a day
-Activo("Oro", "GLD", alarma=CaidaDesdeMaximo(0.15)),                      # 15 % below its one-year high
-Activo("Bitcoin", "BTC-USD", continuo=True, alarma=MaximoMovil(252)),     # new one-year high
-Activo("S&P 500 (€)", "SPY", divisa="EURUSD=X", alarma=No(Cruce(75, 500))),   # moving-average cross, in euros
+# Apple's price goes above $250
+Activo("Apple", "AAPL", alarma=Nivel(250)),
+
+# The Nasdaq 100 falls 3 % or more in a day
+Activo("Nasdaq 100", "QQQ", alarma=Variacion(-0.03)),
+
+# Gold is 15 % or more below its one-year high
+Activo("Oro", "GLD", alarma=CaidaDesdeMaximo(0.15)),
+
+# Bitcoin hits a one-year high (it trades every day)
+Activo("Bitcoin", "BTC-USD", continuo=True, alarma=MaximoMovil(252)),
+
+# The S&P 500, measured in euros, loses its 200-session average
+Activo("S&P 500 (€)", "SPY", divisa="EURUSD=X", alarma=No(Cruce(1, 200))),
 ```
 
-Conditions can be combined ("this and that", "this or that"). An asset can also have **tracking** (alerts you when a trend changes) and a **strategy** with a purchase date (alerts you on entry and exit). All the conditions are in the [manual](docs/bot.en.md#alerts-rules-per-asset).
+Conditions can be combined ("this and that", "this or that"). An asset can also have **tracking** (alerts you when a trend changes) and a **strategy** with a purchase date (alerts you on entry and exit).
+
+You can write the rules by hand or ask an AI for them in plain language ("alert me if gold falls 10 % from its high"): the repository includes the instructions it needs to do it properly (see [Day to day](#day-to-day)). If a rule is badly written, `python -m nucleo.universo` tells you which one and why, and `python bot/alertas.py --demo` shows the alerts that would go out today. All the conditions are in the [manual](docs/bot.en.md#alerts-rules-per-asset); if one is missing, it is added as a new piece without touching the others.
 
 ### Running your own bot
 
-The step-by-step guide is in [`docs/bot.en.md`](docs/bot.en.md). In short:
-1. Copy (*fork*) this repository.
+The step-by-step guide is in [`docs/bot.en.md`](docs/bot.en.md#step-by-step-setup). In short:
+1. Click **Use this template → Create a new repository** and choose **Private**, so your portfolio is not on display. (A *fork* of a public repository is always public.)
 2. Create a Telegram bot with @BotFather.
 3. Save the bot's token, your chat number and, if you want the news brief, your AI key as repository *secrets*.
-4. Change whatever configuration you want.
+4. Enter your portfolio and your rules.
 5. Launch it from the *Actions* tab and schedule it.
+
+## Day to day
+
+Once it is set up, the bot runs on its own: every night it checks your rules, every morning it sends you the news that affects you, and every Monday the report. The only thing you have to do is **keep your portfolio up to date**, because the news filter, the report and the limits are computed from it. The bot uses whatever is on GitHub, so each change counts from the moment you push it.
+
+**The easiest way: ask an AI.** Open the repository with an assistant that can work with files (Claude, Codex, Cursor, Copilot…) and tell it what you would tell a person:
+
+- "I sold half my gold; the portfolio is now worth €12,000 and the gold €600."
+- "Alert me if bitcoin falls 10 % in a week."
+- "I want to add an emerging-markets fund at 5 %; does it break any limit?"
+
+The repository includes instructions for the AI ([`ia/asistente-financiero/SKILL.md`](ia/asistente-financiero/SKILL.md); [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md) point to them, so Claude Code and most assistants read them on their own). With them, the AI knows which file to touch in each case, recalculates the weights, checks your limits and the cost of the trade, writes the rule, verifies that everything agrees and leaves the change ready to push. It never stores euro amounts: the portfolio is kept as weights. In the Claude app you can also upload that folder as a *skill*. The instructions are in Spanish, like the code; the AI answers in your language.
+
+**No AI and nothing to install.** Edit `control/cartera.csv` or `bot/config.py` directly on github.com (the pencil button) and save. When the change is pushed, a workflow (`matriz`) recomputes what depends on the portfolio and checks that everything agrees; if something is wrong, the run turns red and GitHub emails you.
+
+**Every quarter:** add the dates of the upcoming central-bank meetings and inflation releases to `control/calendario.csv`, and go over your notes in `control/cartera.md`.
 
 ## Limitations
 
-- Prices come from Yahoo Finance, which is not an official source: days are sometimes missing. The bot warns you when an asset's data goes stale.
+- Prices come from Yahoo Finance, which is not an official source: days are sometimes missing. Macroeconomic series (interest rates, expected inflation, credit spreads) come from [FRED](https://fred.stlouisfed.org), the free public database of the Federal Reserve Bank of St. Louis. The bot warns you when an asset's data goes stale.
 - The relationships between variables and assets change over time. They are for filtering and understanding, not for forecasting.
 - It takes months of use before you can measure whether the alerts are right (the system logs them so this can be checked).
 - The example rules illustrate the system; they are not recommendations.
@@ -144,16 +172,17 @@ flowchart LR
     subgraph SRC[Data sources]
         direction TB
         Y[Yahoo Finance<br/>prices]
-        F[FRED<br/>macro series]
+        F[FRED<br/>rates, inflation, credit]
         R[RSS<br/>headlines]
     end
+    TU([You, by hand or with an AI<br/>see «Day to day»])
     subgraph CFG[Your configuration]
         direction TB
         CA[control/cartera.csv · cartera.md · perfil.toml<br/>positions, theses and limits]
         VA[control/variables.toml · especificos.csv<br/>general and specific variables]
         CB[bot/config.py<br/>alert rules · RSS feeds<br/>language model]
     end
-    N[nucleo/<br/>data · conditions · universe<br/>limits · shadow · costs · log]
+    N[nucleo/ · shared calculations<br/>downloads the data, evaluates the rules,<br/>limits, costs and log]
     M[(Effect of the variables<br/>on each asset)]
     subgraph BOT[bot/ · on GitHub Actions]
         direction TB
@@ -164,12 +193,13 @@ flowchart LR
     subgraph OUT[Services and outputs]
         direction TB
         T[Telegram]
-        RG[(registro/<br/>decisiones.csv)]
+        RG[(registro/<br/>every alert, to measure<br/>later whether it was right)]
         LLM[Language model<br/>Anthropic, OpenAI or compatible]
         HUECO[" "]:::oculto
     end
     classDef oculto fill:none,stroke:none,color:transparent
 
+    TU --> CFG
     Y & F --> N
     CA & VA --> N
     N --> M
@@ -196,6 +226,7 @@ Dependencies go one way only: `bot/` and `analisis/` use `nucleo/`, and `nucleo/
 ├── nucleo/          shared library (installable Python package)
 │   ├── datos.py         prices (Yahoo) and series (FRED), currency conversion, local copies
 │   ├── indicadores.py   alert conditions
+│   ├── reglas.py        the Activo type, which checks that every rule is well written
 │   ├── universo.py      reads the portfolio, variables and specific factors; consistency check
 │   ├── perfil.py        reads blocks, limits and commissions
 │   ├── exposiciones.py  exposure matrix (in production)
@@ -206,14 +237,15 @@ Dependencies go one way only: `bot/` and `analisis/` use `nucleo/`, and `nucleo/
 ├── registro/        what the bot writes (empty here)
 ├── tests/           tests with no network or keys
 ├── docs/            bot manual and setup guide
-└── .github/workflows/  alerts, daily brief, weekly report and tests
+├── ia/              instructions for an AI to maintain the configuration (AGENTS.md and CLAUDE.md point here)
+└── .github/workflows/  alerts, daily brief and weekly report (scheduled); matrix and tests (on push)
 ```
 
 ### D. Useful commands
 
 ```bash
 python tests/test_reglas.py          # tests (no network)
-python -m nucleo.universo            # does the configuration agree?
+python -m nucleo.universo            # does the configuration agree? (bot rules included)
 python -m nucleo.exposiciones        # regenerates the exposure matrix
 python -m nucleo.limites             # allocation by block and risk limits
 python -m nucleo.costes 5000         # cost of buying and selling €5,000 of an ETF

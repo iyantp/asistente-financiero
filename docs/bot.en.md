@@ -73,6 +73,8 @@ Activo("Litio y baterías (€)", "LIT", divisa="EURUSD=X",
        alarma=Todas((No(Cruce(6, 70)), MinimoMovil(60))))
 ```
 
+**Writing and checking them.** `bot/config.py` is split into blocks (alerts, shadow portfolio, news and technical) and carries this same cheat sheet in its header, so it is enough to copy a line and change it. You can also ask an AI in plain language: the repository includes its instructions (see [README → Day to day](../README.en.md#day-to-day)). Each `Activo` checks when it is created that its rules are well written (a condition without parentheses, a date that is not `AAAA-MM-DD`, a reminder without an alarm…) and, if not, the error says which asset and which rule fail. To check everything: `python -m nucleo.universo`; to see the alerts that would go out today without sending anything: `python bot/alertas.py --demo`. When a change to `bot/config.py` is pushed, the `matriz` workflow runs the same check on GitHub.
+
 **When it is evaluated.** Closed candles only: for stocks, the day's session (no new session on weekends and holidays); for crypto, the previous day's candle, which closes at 00:00 UTC. The bot keeps no state: each run rebuilds the averages from the history. If a run is skipped, that change is not reported, but the weekly summary shows the correct state.
 
 ## Messages
@@ -156,7 +158,7 @@ First, try it locally with `--demo` (see the [README](../README.en.md#try-it)): 
 
 ### 1. Copy the repository
 
-Fork it on GitHub (or create a repository from a copy). If you are going to enter your real weights, make it **private**. Euro amounts are never versioned: if you want to keep them, use a `*.local.*` file, which is in `.gitignore`.
+On the repository page, click **Use this template → Create a new repository** and choose **Private**. A *fork* of a public repository is always public, and your copy will hold your weights and your notes. Euro amounts are never versioned: if you want to keep them, use a `*.local.*` file, which is in `.gitignore`.
 
 ### 2. Create the Telegram bot
 
@@ -184,7 +186,15 @@ Locally, copy `.env.example` to `.env` and fill it in (`.env` is in `.gitignore`
 
 *Actions → alertas → Run workflow*, ticking «resumen», should send you the status summary of each asset. Do the same with `informe` and `diario`.
 
-The `alertas` and `diario` workflows commit `registro/` when they finish (they need `permissions: contents: write`, which they already have). So before pushing from your machine, run `git pull --rebase`.
+The `alertas` and `diario` workflows commit `registro/` when they finish, and `matriz` commits the exposure matrix when the portfolio or the variables change (all of them have `permissions: contents: write`). So before pushing from your machine, run `git pull --rebase`.
+
+| Workflow | When it runs | What it does |
+|---|---|---|
+| `alertas` | Every day (you schedule it) | Evaluates the rules and sends the alerts |
+| `diario` | Monday to Friday (you schedule it) | News brief |
+| `informe` | Once a week (you schedule it) | Weekly report |
+| `matriz` | On its own, when changes to `control/` or `bot/config.py` are pushed | Regenerates the matrix if the portfolio or the variables change, and checks that the whole configuration agrees |
+| `tests` | On its own, when code changes are pushed | Offline tests |
 
 ## Scheduling the runs
 
@@ -222,19 +232,19 @@ The `informe` can run on any day; it summarises the last full week. Example sche
 
 | If you change… | Do this |
 |---|---|
-| A position | Its row in `control/cartera.csv` (name, block, weight, short name, Yahoo ticker that proxies it, currency: empty if it is already in your currency) and its thesis in `control/cartera.md`. Then run `python -m nucleo.exposiciones` to regenerate the matrix. |
+| A position | Its row in `control/cartera.csv` (name, block, weight, short name, Yahoo ticker that proxies it, currency: empty if it is already in your currency) and its thesis in `control/cartera.md`. The matrix is regenerated on its own when the change is pushed (`matriz` workflow); locally, `python -m nucleo.exposiciones`. |
 | A bot rule | `bot/config.py` (with `posicion=` if it belongs to a portfolio position). |
 | A kind of condition | A class in `nucleo/indicadores.py` with `serie()`, `describir()` and `sesiones`, plus its test in `tests/`. |
-| A general variable or a daily proxy | `control/variables.toml`; then `python -m nucleo.exposiciones`. |
+| A general variable or a daily proxy | `control/variables.toml` (the matrix is regenerated on its own when pushed; locally, `python -m nucleo.exposiciones`). |
 | A specific factor | Its row in `control/especificos.csv`. |
 | The blocks, limits or commissions | `control/perfil.toml`. |
 | News sources | `FUENTES_RSS` in `bot/config.py`. |
 | The language model | `DIARIO_*` in `bot/config.py` (see [Language model](#language-model)). |
 | A new file read by the code | Its path in `nucleo/rutas.py`, and nowhere else. |
 
-After any change: `python -m nucleo.universo` (does everything agree?) and `python tests/test_reglas.py`. The test `test_coherencia_de_los_archivos_reales` checks that the portfolio, the variables, the matrix and the bot's rules agree with one another.
+After any change: `python -m nucleo.universo` (do the portfolio, profile, variables, matrix and bot rules agree?) and `python tests/test_reglas.py`. The test `test_coherencia_de_los_archivos_reales` checks that the portfolio, the variables, the matrix and the bot's rules agree with one another.
 
-Maintenance: `control/calendario.csv` every quarter, and the exposure matrix every quarter or whenever a new asset is added.
+Maintenance: `control/calendario.csv` every quarter, and the exposure matrix every quarter (*Actions → matriz → Run workflow*); when a new asset is added it is regenerated on its own.
 
 ## Dependencies
 

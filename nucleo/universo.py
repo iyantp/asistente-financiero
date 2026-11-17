@@ -9,13 +9,14 @@ diario la importan de aquí. Nada de esto se escribe en el código:
   nombre corto y aproximación en Yahoo); los bloques válidos, de control/perfil.toml.
 `coherencia()` comprueba que todo cuadra (variables, específicos, perfil, matriz y reglas del bot).
 
-Comprobación rápida de la configuración:  python -m nucleo.universo
+Comprobación rápida de toda la configuración, reglas del bot incluidas:  python -m nucleo.universo
+(termina con código 1 si hay problemas, para que un workflow quede en rojo)
 """
 import csv
 import sys
 
 from nucleo import perfil
-from nucleo.rutas import CARTERA_CSV, ESPECIFICOS_CSV, VARIABLES_TOML
+from nucleo.rutas import CARTERA_CSV, CONFIG_BOT, ESPECIFICOS_CSV, VARIABLES_TOML
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -180,6 +181,21 @@ def coherencia(activos_bot=(), matriz=None, filas=None):
     return problemas
 
 
+def reglas_bot():
+    """(config.ACTIVOS de bot/config.py, problemas al cargarlo). Solo para la comprobación por línea de órdenes:
+    el paquete nucleo no depende de bot/. Cargar el archivo ya valida cada regla (nucleo.reglas.Activo)."""
+    import importlib.util
+    try:
+        spec = importlib.util.spec_from_file_location("config_bot", CONFIG_BOT)
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        return list(getattr(modulo, "ACTIVOS", [])), []
+    except ValueError as e:  # una regla mal escrita (el mensaje ya dice cuál)
+        return [], [str(e)]
+    except Exception as e:  # noqa: BLE001 (cualquier otro error al leer las reglas se muestra tal cual)
+        return [], [f"bot/config.py: {type(e).__name__}: {e}"]
+
+
 if __name__ == "__main__":
     print(f"Variables generales ({VARIABLES_TOML.name}):")
     for n, (fuente, codigo, cambio, matriz) in VARIABLES.items():
@@ -188,9 +204,15 @@ if __name__ == "__main__":
     for n, (ticker, cambio, var, signo) in DIARIAS.items():
         print(f"  {n:<26} {ticker:<12} → {var or '(informativa)'}{'' if signo == 1 else ' (signo -)'}")
     print("Específicos:", "; ".join(f"{a} ← {', '.join(f)}" for a, f in FACTORES.items()) or "ninguno")
+    reglas, problemas_reglas = reglas_bot()
+    print(f"Reglas del bot: {len(reglas)} activos vigilados")
     try:
-        problemas = coherencia(matriz=leer_matriz())
+        problemas = coherencia(reglas, matriz=leer_matriz())
     except RuntimeError as e:  # matriz generada con otras variables
-        problemas = coherencia() + [str(e)]
-    print("\n" + ("✅ Todo cuadra (variables, cartera y matriz; las reglas del bot las comprueban las pruebas y el "
-                   "informe semanal)" if not problemas else "Problemas:\n" + "\n".join("  · " + x for x in problemas)))
+        problemas = coherencia(reglas) + [str(e)]
+    except FileNotFoundError:
+        problemas = coherencia(reglas) + ["no hay matriz de exposición: genérala con python -m nucleo.exposiciones"]
+    problemas = problemas_reglas + problemas
+    print("\n" + ("✅ Todo cuadra (cartera, perfil, variables, matriz y reglas del bot)" if not problemas
+                   else "Problemas:\n" + "\n".join("  · " + x for x in problemas)))
+    sys.exit(1 if problemas else 0)

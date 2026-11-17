@@ -304,7 +304,7 @@ def test_salida_previa_igual_que_calculo_independiente():
 
 def test_alarma_de_posicion_solo_vale_dentro(monkeypatch=None):
     import alertas
-    from config import Activo
+    from nucleo.reglas import Activo
     p = _caida()
     hoy = p.index[-1].date()
     alertas.precios = lambda *a, **k: p                    # sin red: precios inventados
@@ -324,6 +324,27 @@ def test_alarma_de_posicion_solo_vale_dentro(monkeypatch=None):
     assert alertas.evaluar(sin, hoy)["alarma"] is True
 
 
+def test_reglas_mal_escritas_dan_un_error_claro():
+    from nucleo.reglas import Activo
+    Activo("Oro", "GLD", alarma=Todas((Cruce(6, 20), No(MinimoMovil(60)))), recordatorio="texto")  # bien escrita
+    casos = {
+        "sin paréntesis": dict(alarma=Nivel),
+        "Cruce sin paréntesis": dict(alarma=No(Cruce)),
+        "dobles paréntesis": dict(alarma=Todas(Cruce(6, 70))),
+        "AAAA-MM-DD": dict(en_cartera="1/6/2026"),
+        "no es una condición": dict(senal=250),
+        "recordatorio pero no alarma": dict(recordatorio="texto"),
+        "seguimiento debe ser": dict(seguimiento=[Cruce(6, 70)]),
+    }
+    for esperado, kw in casos.items():
+        try:
+            Activo("Oro", "GLD", **kw)
+        except ValueError as e:
+            assert esperado in str(e) and "'Oro'" in str(e), (esperado, str(e))
+        else:
+            raise AssertionError(f"no detecta: {esperado}")
+
+
 def test_coherencia_de_los_archivos_reales():
     """cartera.csv, FACTORES, la matriz y las reglas del bot cuadran (falla si se renombra algo en un solo sitio)."""
     import pandas as pd
@@ -335,7 +356,7 @@ def test_coherencia_de_los_archivos_reales():
 
 
 def test_coherencia_detecta_errores():
-    from config import Activo
+    from nucleo.reglas import Activo
     from nucleo.universo import coherencia
     filas = [{"activo": "A", "bloque": "ahorro", "peso": "60", "corto": "", "ticker": "SPY", "divisa": "", "aproximacion": ""},
              {"activo": "B", "bloque": "otro", "peso": "30", "corto": "", "ticker": "", "divisa": "", "aproximacion": ""}]

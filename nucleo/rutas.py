@@ -16,6 +16,9 @@ VARIABLES_TOML = CONTROL / "variables.toml"   # variables generales, aproximacio
 ESPECIFICOS_CSV = CONTROL / "especificos.csv"  # factores específicos de una o pocas posiciones
 FACTORES_TOML = CONTROL / "factores.toml"     # factores del modelo de riesgo (sustituirá a la matriz)
 
+# Reglas del bot (solo las lee el bot y la comprobación de python -m nucleo.universo; nucleo/ no importa de bot/)
+CONFIG_BOT = RAIZ / "bot" / "config.py"
+
 # Resultados que generan los cuadernos y el bot
 MATRIZ = RAIZ / "analisis" / "exposiciones.csv"  # la genera nucleo/exposiciones.py (python -m nucleo.exposiciones)
 REGISTRO = RAIZ / "registro" / "decisiones.csv"  # la escribe el bot (los workflows hacen commit de registro/)

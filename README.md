@@ -12,7 +12,7 @@ Un asistente que vigila tus inversiones y te avisa por Telegram **solo cuando pa
 2. **Un resumen de noticias filtrado.** Cada mañana lee los titulares de las fuentes que elijas y te manda solo los que afectan a lo que tienes, con el motivo. Una IA ordena los titulares; la decisión de qué te importa la toman reglas fijas, así que es predecible.
 3. **Un sistema para entender qué mueve tu cartera.** Mide cómo afectan las grandes variables del mercado (tipos de interés, dólar, inflación, petróleo…) a cada uno de tus activos y cómo se relacionan tus activos entre sí. Cada lunes te explica en un informe qué ha movido tu cartera esa semana.
 
-> Todo lo personal es configuración: tu cartera, tus reglas, tus fuentes, tus variables y el proveedor de IA. Lo que hay aquí es **mi configuración, como ejemplo**: lo que no cambies se queda así. Los pesos de la cartera son ficticios. Nada de esto es asesoramiento financiero.
+> Todo lo personal es configuración: tu cartera, tus reglas, tus fuentes, tus variables y el proveedor de IA. Lo que hay aquí es **una configuración de ejemplo**, con una cartera típica inventada: lo que no cambies se queda así. Nada de esto es asesoramiento financiero.
 
 ## Por qué existe
 
@@ -61,33 +61,61 @@ En Windows, la cuarta línea es `.venv\Scripts\activate`. Las dos últimas muest
 | Los bloques de tu cartera, tus límites de riesgo y las comisiones de tu bróker | `control/perfil.toml` |
 | Eventos de la semana (Fed, BCE, IPC…) | `control/calendario.csv` |
 | A qué hora llega cada cosa | El programador que uses (ver la guía) |
+| Instrucciones para que una IA mantenga todo lo anterior | `ia/asistente-financiero/SKILL.md` (ver [El día a día](#el-día-a-día)) |
 
 ### Tus reglas de alertas
 
-Cada regla es una línea de `bot/config.py`:
+Cada regla es una línea de `bot/config.py`, que está pensado para eso: arriba tiene una chuleta con todas las condiciones y debajo las reglas, separadas del resto. Por ejemplo:
 
 ```python
-Activo("Apple", "AAPL", alarma=Nivel(250)),                               # el precio supera 250 $
-Activo("Nasdaq 100", "QQQ", alarma=Variacion(-0.03)),                     # cae un 3 % o más en un día
-Activo("Oro", "GLD", alarma=CaidaDesdeMaximo(0.15)),                      # 15 % bajo su máximo de un año
-Activo("Bitcoin", "BTC-USD", continuo=True, alarma=MaximoMovil(252)),     # nuevo máximo de un año
-Activo("S&P 500 (€)", "SPY", divisa="EURUSD=X", alarma=No(Cruce(75, 500))),   # cruce de medias, en euros
+# El precio de Apple supera 250 $
+Activo("Apple", "AAPL", alarma=Nivel(250)),
+
+# El Nasdaq 100 cae un 3 % o más en un día
+Activo("Nasdaq 100", "QQQ", alarma=Variacion(-0.03)),
+
+# El oro está un 15 % o más por debajo de su máximo de un año
+Activo("Oro", "GLD", alarma=CaidaDesdeMaximo(0.15)),
+
+# El bitcoin marca un máximo de un año (cotiza todos los días)
+Activo("Bitcoin", "BTC-USD", continuo=True, alarma=MaximoMovil(252)),
+
+# El S&P 500, medido en euros, pierde su media de 200 sesiones
+Activo("S&P 500 (€)", "SPY", divisa="EURUSD=X", alarma=No(Cruce(1, 200))),
 ```
 
-Las condiciones se pueden combinar («esto y aquello», «esto o aquello»). Un activo también puede tener **seguimiento** (te avisa cuando cambia una tendencia) y una **estrategia** con fecha de compra (te avisa de la entrada y de la salida). Todas las condiciones están en el [manual](docs/bot.md#alertas-reglas-por-activo).
+Las condiciones se combinan («esto y aquello», «esto o aquello»). Un activo también puede tener **seguimiento** (te avisa cuando cambia una tendencia) y una **estrategia** con fecha de compra (te avisa de la entrada y de la salida).
+
+Puedes escribir las reglas a mano o pedírselas a una IA en lenguaje normal («avísame si el oro cae un 10 % desde su máximo»): el repositorio incluye las instrucciones para que lo haga bien (ver [El día a día](#el-día-a-día)). Si una regla está mal escrita, `python -m nucleo.universo` te dice cuál y por qué, y `python bot/alertas.py --demo` te enseña los avisos que saldrían hoy. Todas las condiciones están en el [manual](docs/bot.md#alertas-reglas-por-activo); si te falta alguna, se añade como una pieza nueva sin tocar las demás.
 
 ### Montar tu propio bot
 
-La guía paso a paso está en [`docs/bot.md`](docs/bot.md). En resumen:
-1. Haz una copia (*fork*) de este repositorio.
+La guía paso a paso está en [`docs/bot.md`](docs/bot.md#puesta-en-marcha-paso-a-paso). En resumen:
+1. Pulsa **Use this template → Create a new repository** y elige **Private**: así tu cartera no queda a la vista. (Un *fork* de un repositorio público es siempre público.)
 2. Crea un bot de Telegram con @BotFather.
 3. Guarda el token del bot, tu número de chat y, si quieres el resumen de noticias, la clave de tu IA como *secrets* del repositorio.
-4. Cambia la configuración que quieras.
+4. Pon tu cartera y tus reglas.
 5. Lánzalo desde la pestaña *Actions* y prográmalo.
+
+## El día a día
+
+Una vez montado, el bot funciona solo: cada noche revisa tus reglas, cada mañana te manda las noticias que te afectan y cada lunes el informe. Lo único que tienes que hacer tú es **mantener al día tu cartera**, porque el filtro de noticias, el informe y los límites se calculan con ella. El bot usa lo que hay en GitHub, así que cada cambio cuenta desde que lo subes.
+
+**La forma más sencilla: pedírselo a una IA.** Abre el repositorio con un asistente que pueda trabajar con archivos (Claude, Codex, Cursor, Copilot…) y díselo como se lo dirías a una persona:
+
+- «He vendido la mitad del oro; ahora la cartera vale 12.000 € y el oro, 600 €.»
+- «Avísame si el bitcoin cae un 10 % en una semana.»
+- «Quiero añadir un fondo de mercados emergentes con un 5 %; ¿me salta algún límite?»
+
+El repositorio incluye instrucciones para la IA ([`ia/asistente-financiero/SKILL.md`](ia/asistente-financiero/SKILL.md); [`AGENTS.md`](AGENTS.md) y [`CLAUDE.md`](CLAUDE.md) apuntan a ellas, así que Claude Code y la mayoría de asistentes las leen solos). Con ellas, la IA sabe qué archivo tocar en cada caso, recalcula los pesos, comprueba tus límites y el coste de la operación, escribe la regla, verifica que todo cuadra y te deja el cambio listo para subir. Nunca guarda importes en euros: la cartera se guarda en pesos. En la app de Claude también puedes subir esa carpeta como *skill*.
+
+**Sin IA y sin instalar nada.** Edita `control/cartera.csv` o `bot/config.py` directamente en github.com (el botón del lápiz) y guarda. Al subir el cambio, un workflow (`matriz`) recalcula lo que depende de la cartera y comprueba que todo cuadra; si algo está mal, la ejecución queda en rojo y GitHub te avisa por correo.
+
+**Cada trimestre:** añade a `control/calendario.csv` las fechas de los próximos bancos centrales y datos de inflación, y repasa tus notas de `control/cartera.md`.
 
 ## Limitaciones
 
-- Los precios vienen de Yahoo Finance, que no es una fuente oficial: a veces faltan días. El bot te avisa si los datos de un activo se quedan atrasados.
+- Los precios vienen de Yahoo Finance, que no es una fuente oficial: a veces faltan días. Las series macroeconómicas (tipos de interés, inflación esperada, diferenciales de crédito) vienen de [FRED](https://fred.stlouisfed.org), la base de datos pública y gratuita de la Reserva Federal de St. Louis. El bot te avisa si los datos de un activo se quedan atrasados.
 - Las relaciones entre variables y activos cambian con el tiempo. Sirven para filtrar y entender, no para predecir.
 - Hacen falta meses de uso antes de poder medir si las alertas aciertan (el sistema las va registrando para comprobarlo).
 - Las reglas de ejemplo ilustran el sistema; no son recomendaciones.
@@ -142,16 +170,17 @@ flowchart LR
     subgraph SRC[Fuentes de datos]
         direction TB
         Y[Yahoo Finance<br/>precios]
-        F[FRED<br/>series macro]
+        F[FRED<br/>tipos, inflación, crédito]
         R[RSS<br/>titulares]
     end
+    TU([Tú, a mano o con una IA<br/>ver «El día a día»])
     subgraph CFG[Tu configuración]
         direction TB
         CA[control/cartera.csv · cartera.md · perfil.toml<br/>posiciones, tesis y límites]
         VA[control/variables.toml · especificos.csv<br/>variables generales y específicas]
         CB[bot/config.py<br/>reglas de alertas · fuentes RSS<br/>modelo de lenguaje]
     end
-    N[nucleo/<br/>datos · indicadores · universo<br/>límites · sombra · costes · registro]
+    N[nucleo/ · cálculos comunes<br/>descarga los datos, evalúa las reglas,<br/>límites, costes y registro]
     M[(Efecto de las variables<br/>en cada activo)]
     subgraph BOT[bot/ · en GitHub Actions]
         direction TB
@@ -162,12 +191,13 @@ flowchart LR
     subgraph OUT[Servicios y salidas]
         direction TB
         T[Telegram]
-        RG[(registro/<br/>decisiones.csv)]
+        RG[(registro/<br/>cada aviso, para medir<br/>después si acertó)]
         LLM[Modelo de lenguaje<br/>Anthropic, OpenAI o compatible]
         HUECO[" "]:::oculto
     end
     classDef oculto fill:none,stroke:none,color:transparent
 
+    TU --> CFG
     Y & F --> N
     CA & VA --> N
     N --> M
@@ -194,6 +224,7 @@ Las dependencias van en un solo sentido: `bot/` y `analisis/` usan `nucleo/`, y 
 ├── nucleo/          biblioteca común (paquete Python instalable)
 │   ├── datos.py         precios (Yahoo) y series (FRED), conversión de divisa, copias locales
 │   ├── indicadores.py   condiciones de las alertas
+│   ├── reglas.py        el tipo Activo, que comprueba que cada regla está bien escrita
 │   ├── universo.py      lee cartera, variables y específicos; comprobación de coherencia
 │   ├── perfil.py        lee bloques, límites y comisiones
 │   ├── exposiciones.py  matriz de exposición (en producción)
@@ -204,14 +235,15 @@ Las dependencias van en un solo sentido: `bot/` y `analisis/` usan `nucleo/`, y 
 ├── registro/        lo que escribe el bot (aquí, vacío)
 ├── tests/           pruebas sin red ni claves
 ├── docs/            manual del bot y guía de puesta en marcha
-└── .github/workflows/  alertas, diario, informe y tests
+├── ia/              instrucciones para que una IA mantenga la configuración (AGENTS.md y CLAUDE.md apuntan aquí)
+└── .github/workflows/  alertas, diario e informe (programados); matriz y tests (al subir cambios)
 ```
 
 ### D. Comandos útiles
 
 ```bash
 python tests/test_reglas.py          # pruebas (sin red)
-python -m nucleo.universo            # ¿cuadra la configuración?
+python -m nucleo.universo            # ¿cuadra la configuración? (reglas del bot incluidas)
 python -m nucleo.exposiciones        # regenera la matriz de exposición
 python -m nucleo.limites             # reparto por bloques y límites de riesgo
 python -m nucleo.costes 5000         # coste de comprar y vender 5.000 € de un ETF
