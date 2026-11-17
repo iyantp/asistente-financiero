@@ -482,6 +482,43 @@ def test_especifico_compartido_conserva_la_correlacion():
     assert correlacion_modelo(["G", "S"], ["G"]) < real - 0.5                       # solo en X: se pierde
 
 
+def test_calendario_comun_acumula_los_dias_sin_sesion():
+    """Un activo que cotiza en fin de semana (cripto) lleva el movimiento del sábado y el domingo en el lunes."""
+    from nucleo import factores as fa
+    dias = pd.date_range("2024-01-05", "2024-01-09")                                # vie, sáb, dom, lun, mar
+    cripto = pd.Series([100, 110, 121, 133.1, 133.1], index=dias)
+    sesiones = pd.bdate_range("2024-01-05", "2024-01-09")                          # vie, lun, mar
+    r = np.log(fa.en_sesiones(cripto, sesiones)).diff()
+    assert np.isclose(r["2024-01-08"], np.log(1.331)) and np.isclose(r["2024-01-09"], 0)
+    assert np.isclose(r.sum(), np.log(cripto.iloc[-1] / cripto.iloc[0]))             # nada se pierde
+    corta = pd.Series([1.0, 2.0], index=pd.to_datetime(["2024-01-02", "2024-01-03"]))
+    largas = pd.bdate_range("2024-01-01", "2024-01-31")
+    s = fa.en_sesiones(corta, largas)
+    assert np.isnan(s["2024-01-01"]) and s["2024-01-10"] == 2 and np.isnan(s["2024-01-31"])  # sin rellenar de más
+
+
+def test_betas_moviles():
+    """Con una β que cambia a mitad de muestra, la EWMA la sigue y la acumulada se queda en la media."""
+    from nucleo import factores as fa
+    rng = np.random.default_rng(6)
+    idx = pd.bdate_range("2015-01-01", periods=2000)
+    f = pd.DataFrame({"F": rng.standard_normal(2000)}, index=idx)
+    beta = np.where(np.arange(2000) < 1000, 0.5, 1.5)
+    y = pd.Series(0.01 + beta * f.F + 0.1 * rng.standard_normal(2000), index=idx)
+    ewma = fa.betas_moviles(y, f, "ewma", 60)
+    acum = fa.betas_moviles(y, f, "acumulada")
+    vent = fa.betas_moviles(y, f, "ventana", 250)
+    assert abs(ewma["F"].iloc[-1] - 1.5) < 0.05 and abs(ewma["α"].iloc[-1] - 0.01) < 0.02
+    assert abs(vent["F"].iloc[-1] - 1.5) < 0.05 and abs(vent["F"].iloc[900] - 0.5) < 0.05
+    assert abs(acum["F"].iloc[-1] - 1.0) < 0.05                                       # media de las dos etapas
+    sin_mirar = fa.betas_moviles(y.iloc[:1500], f.iloc[:1500], "ewma", 60)           # no usa datos posteriores
+    assert np.allclose(sin_mirar["F"].dropna(), ewma["F"].iloc[:1500].dropna())
+    assert ewma["F"].iloc[:251].isna().all() and ewma["F"].iloc[251:].notna().all()   # mínimo de 252 datos
+    e_ewma = fa.error_fuera_de_muestra(y, f, ewma).loc["2020":]
+    e_acum = fa.error_fuera_de_muestra(y, f, acum).loc["2020":]
+    assert (e_ewma ** 2).mean() < 0.5 * (e_acum ** 2).mean()
+
+
 def test_conversion_exacta():
     from nucleo import factores as fa
     idx = pd.bdate_range("2024-01-01", periods=6)
@@ -498,7 +535,7 @@ def test_conversion_exacta():
     finally:
         fa.precios, fa.cambio = previo
     assert np.allclose((Rl + K - Ri).dropna(), 0)                                  # r_tuya = r_local + conversión
-    assert np.allclose(K["X"].dropna(), -np.log(fx).diff().dropna()) and (K["Y"] == 0).all()
+    assert np.allclose(K["X"].dropna(), -np.log(fx).diff().dropna()) and (K["Y"].dropna() == 0).all()
 
 
 # --- proveedor del modelo de lenguaje (bot/llm.py) -------------------------------------------

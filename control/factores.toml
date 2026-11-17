@@ -45,6 +45,18 @@ inicio = "2008-07-01"
 #   "estimada"  se estima sobre las rentabilidades ya convertidas, con la divisa como un factor más (`usar = true` en
 #               el factor Euro). Es lo que hacía la matriz; mezcla la aritmética de la conversión con la economía.
 conversion = "exacta"
+# Calendario común: las sesiones de este ticker (bolsa de EE. UU.). Factores y activos se toman en esas fechas y cada
+# rentabilidad va de una sesión a la siguiente; lo que cotiza en fin de semana (cripto) acumula sábado y domingo en el
+# lunes, así que no se pierde ni se compara con un periodo distinto.
+calendario = "SPY"
+# Cómo se estiman las exposiciones (β) en el tiempo (paso 3, analisis/factores.ipynb):
+#   metodo = "ewma"       todas las sesiones, con peso que se reduce a la mitad cada `vida_media` sesiones (elegido)
+#   metodo = "ventana"    solo las últimas `sesiones`, con el mismo peso
+#   metodo = "acumulada"  toda la historia con el mismo peso (β fijas)
+# Fuera de muestra, las β fijas son las que peor explican el día siguiente: con EWMA de 252 sesiones (un año), el
+# error que queda sin explicar baja un 11-20 % en las posiciones de bolsa, un 2-13 % en tierras raras y un 2 % en la
+# cripto, en los dos subperiodos (sin empeorar en ninguno). 126 sesiones da casi lo mismo; 252 es más estable.
+estimacion = { metodo = "ewma", vida_media = 252 }
 
 [factores."Renta variable"]
 tipo = "precio"

@@ -16,17 +16,17 @@ Un asistente que vigila tus inversiones y te avisa por Telegram **solo cuando pa
 
 ## Por qué existe
 
-Partió de dos intenciones. Por un lado, programar por mi cuenta las alertas y los avisos que me parecieran convenientes, personalizados y sin pagar un servicio por ello. Por otro, automatizar la información: recibir solo las noticias y los datos que afectan a lo que tengo.
+El proyecto parte de dos objetivos. El primero, disponer de un sistema propio de alertas sobre los mercados, configurable sin limitaciones y sin depender de un servicio de pago. El segundo, automatizar la información financiera: recibir únicamente las noticias y los datos que afectan a la cartera.
 
-La segunda es la difícil. Las noticias financieras son un lío: llegan a decenas cada día, muchas se contradicen, casi todas suenan importantes y muy pocas dicen qué cambian para ti. ¿Una subida del petróleo es mala para un fondo indexado? ¿Y una Reserva Federal más dura, para el oro? Depende, y casi nunca se explica de qué.
+El segundo objetivo plantea el problema de fondo. El volumen de noticias financieras es elevado, su relevancia es muy desigual y rara vez indican qué efecto tienen sobre una cartera concreta. Una subida del petróleo o un cambio de tono de la Reserva Federal afectan a unos activos y no a otros, y ese efecto depende de relaciones que la noticia no explica. Filtrar por la importancia aparente de un titular, o por el criterio de quien lo publica, no resuelve esa cuestión.
 
-Por eso el asistente no decide por lo llamativo de un titular, sino haciéndose tres preguntas con cada uno:
+El asistente aplica en su lugar un criterio explícito y medible. Para cada titular comprueba tres condiciones:
 
-1. **¿Qué variable del mercado mueve?** Tipos de interés, dólar, inflación, petróleo… Una IA traduce el titular a una variable y una dirección. Es lo único que hace la IA.
-2. **¿Se ha movido de verdad?** Se comprueba con los datos del día: la noticia solo cuenta si esa variable se ha movido bastante más de lo normal. Lo que el mercado ya esperaba no mueve nada, por mucho ruido que haga.
-3. **¿Te afecta a ti?** Con años de historia se mide cuánto se mueve cada uno de tus activos cuando se mueve esa variable. Si tu cartera no reacciona a ella, la noticia se descarta.
+1. **Qué variable de mercado afecta** (tipos de interés, dólar, inflación, petróleo…) y en qué dirección. Esta clasificación es la única tarea que se delega en un modelo de lenguaje.
+2. **Si esa variable se ha movido de forma significativa** ese día respecto a su comportamiento habitual. Una noticia que el mercado ya esperaba no altera los precios.
+3. **Si la cartera es sensible a esa variable**, según la relación histórica entre la variable y cada activo.
 
-Las dos últimas preguntas las responden los datos, no la IA ni la opinión de quien escribe la noticia, así que el filtro es predecible y se puede comprobar. Cada noticia llega con su porqué (qué variable, cuánto se ha movido, qué posiciones tuyas suben o bajan con ella) y los titulares sonados que se descartan aparecen al final con el motivo («la variable apenas se movió», «efecto en tu cartera despreciable»). Con el tiempo, además, se aprende cómo encajan las piezas del mercado. Y todo queda registrado, también lo descartado, para medir con los meses si el filtro acierta.
+Solo se notifican las noticias que cumplen las tres. Las dos últimas condiciones se evalúan con datos, no con la interpretación del modelo de lenguaje ni con la del autor de la noticia, de modo que el filtro es predecible, reproducible y verificable. Cada notificación indica la variable afectada, la magnitud de su movimiento y las posiciones expuestas; los titulares destacados que se descartan se listan con el motivo. Todas las decisiones, incluidas las descartadas, quedan registradas para evaluar la precisión del filtro con el tiempo.
 
 ## Cómo entiende el mercado
 
@@ -150,15 +150,17 @@ Se relacionan por $\gamma_k = \sum_j \beta_j \rho_{jk}$. Inferencia: estadístic
 
 **En construcción: un modelo de factores de riesgo** (`control/factores.toml`, `nucleo/factores.py`), al estilo de los modelos de Barra o del *Factor Lens* de Two Sigma. Cada activo se describe como
 
-$$r_{a,t} = \alpha_a + \sum_k \beta_{a,k}\, f_{k,t} + \varepsilon_{a,t},$$
+$$r_{a,t} = \alpha_{a,t} + \sum_k \beta_{a,k,t}\, f_{k,t} + \varepsilon_{a,t},$$
 
 y de ahí sale también la correlación entre activos, $\Sigma = B\,\Omega\,B^\top + D$. Frente a la matriz:
 - **Factores negociables con dato diario** (ETF y diferencias entre ETF) en lugar de series macroeconómicas que se publican con retraso.
 - **Ortogonalización en un orden elegido** (Gram-Schmidt), para que factores solapados, como el euro y el dólar, no se repartan el mérito de forma inestable.
-- **Factores específicos** compartidos por las posiciones a las que explican y limpios de los generales. Si una posición tuviera su factor en exclusiva, la parte que comparte con otras quedaría como riesgo propio y se perdería su correlación (con el bitcoin y el ether, el modelo daría 0,13 en lugar del 0,82 real).
+- **Factores específicos** compartidos por las posiciones a las que explican y limpios de los generales. Si una posición tuviera su factor en exclusiva, la parte que comparte con otras quedaría como riesgo propio y se perdería su correlación (con el bitcoin y el ether, el modelo daría 0,12 en lugar del 0,79 real).
 - **Conversión de divisa exacta,** en vez de estimada como un factor más.
+- **Calendario común:** factores y activos se toman en las mismas sesiones; lo que cotiza en fin de semana (cripto) acumula esos días en el lunes en vez de perderlos.
+- **Exposiciones que cambian con el tiempo,** estimadas con medias exponenciales (vida media de un año). Fuera de muestra, explican el día siguiente mejor que unas $\beta$ fijas: el error sin explicar baja hasta un 20 % según el activo.
 
-Está pendiente estimar exposiciones que varían en el tiempo, contraer las estimaciones hacia valores de referencia, separar las correlaciones en calma y en tensión (VIX, MOVE y diferencial de crédito) y validar el modelo frente a lo que ocurre después.
+Está pendiente contraer las estimaciones hacia valores de referencia, separar las correlaciones en calma y en tensión (VIX, MOVE y diferencial de crédito) y validar el modelo frente a lo que ocurre después.
 
 ### B. Decisiones de diseño
 

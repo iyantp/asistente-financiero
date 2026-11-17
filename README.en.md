@@ -16,17 +16,17 @@ An assistant that watches your investments and messages you on Telegram **only w
 
 ## Why it exists
 
-It started from two goals. First, to build my own alerts and notifications, tailored to what I find useful, without paying for a service. Second, to automate information: to receive only the news and data that affect what I hold.
+The project has two objectives. The first is to have a personal market-alert system that can be configured without restrictions and does not depend on a paid service. The second is to automate financial information: to receive only the news and data that affect the portfolio.
 
-The second is the hard one. Financial news is a mess: dozens of items a day, many contradicting each other, almost all sounding important, and very few saying what they change for you. Is a rise in oil bad for an index fund? Is a more hawkish Federal Reserve bad for gold? It depends, and what it depends on is rarely explained.
+The second objective raises the underlying problem. Financial news arrives in large volume, its relevance varies widely, and it rarely states what effect it has on a particular portfolio. A rise in oil prices or a shift in the Federal Reserve's tone affects some assets and not others, and that effect depends on relationships the news does not explain. Filtering by how important a headline appears, or by the judgement of whoever publishes it, does not answer that question.
 
-So the assistant does not decide on how striking a headline is. It asks three questions of each one:
+The assistant applies an explicit, measurable criterion instead. For each headline it checks three conditions:
 
-1. **Which market variable does it move?** Interest rates, the dollar, inflation, oil… An AI translates the headline into a variable and a direction. That is all the AI does.
-2. **Did it really move?** This is checked against the day's data: the news only counts if that variable moved well beyond normal. What the market already expected moves nothing, however loud it is.
-3. **Does it affect you?** Years of history measure how much each of your assets moves when that variable moves. If your portfolio does not react to it, the news is discarded.
+1. **Which market variable it affects** (interest rates, the dollar, inflation, oil…) and in which direction. This classification is the only task delegated to a language model.
+2. **Whether that variable moved significantly** that day relative to its usual behaviour. News the market already expected does not move prices.
+3. **Whether the portfolio is sensitive to that variable**, based on the historical relationship between the variable and each asset.
 
-The last two questions are answered by data, not by the AI or by whoever wrote the article, so the filter is predictable and can be checked. Each item arrives with its reason (which variable, how much it moved, which of your positions rise or fall with it), and the loud headlines that get discarded are listed at the end with the reason ("the variable barely moved", "negligible effect on your portfolio"). Over time you also learn how the pieces of the market fit together. And everything is logged, including what was discarded, to measure over the months whether the filter gets it right.
+Only news that meets all three is notified. The last two conditions are evaluated with data, not with the language model's interpretation or the author's, so the filter is predictable, reproducible and verifiable. Each notification states the variable affected, the size of its move and the positions exposed; prominent headlines that are discarded are listed with the reason. Every decision, including the discarded ones, is logged so that the filter's accuracy can be evaluated over time.
 
 ## How it understands the market
 
@@ -152,15 +152,17 @@ They are related by $\gamma_k = \sum_j \beta_j \rho_{jk}$. Inference: Newey-West
 
 **Under construction: a risk factor model** (`control/factores.toml`, `nucleo/factores.py`), in the style of Barra's models or Two Sigma's *Factor Lens*. Each asset is described as
 
-$$r_{a,t} = \alpha_a + \sum_k \beta_{a,k}\, f_{k,t} + \varepsilon_{a,t},$$
+$$r_{a,t} = \alpha_{a,t} + \sum_k \beta_{a,k,t}\, f_{k,t} + \varepsilon_{a,t},$$
 
 which also gives the correlation between assets, $\Sigma = B\,\Omega\,B^\top + D$. Compared with the matrix:
 - **Tradable factors with daily data** (ETFs and differences between ETFs) instead of macroeconomic series published with a lag.
 - **Orthogonalisation in a chosen order** (Gram-Schmidt), so that overlapping factors, such as the euro and the dollar, do not split the credit unstably.
-- **Specific factors** shared by the positions they explain and cleaned of the general ones. If a position had its factor to itself, the part it shares with others would be left as its own risk and their correlation would be lost (for bitcoin and ether, the model would give 0.13 instead of the actual 0.82).
+- **Specific factors** shared by the positions they explain and cleaned of the general ones. If a position had its factor to itself, the part it shares with others would be left as its own risk and their correlation would be lost (for bitcoin and ether, the model would give 0.12 instead of the actual 0.79).
 - **Exact currency conversion,** instead of estimating it as one more factor.
+- **Common calendar:** factors and assets are sampled on the same sessions; whatever trades at weekends (crypto) accumulates those days into Monday instead of losing them.
+- **Time-varying exposures,** estimated with exponential weighting (one-year half-life). Out of sample they explain the next day better than fixed $\beta$s: the unexplained error falls by up to 20 % depending on the asset.
 
-Still to come: time-varying exposures, shrinking the estimates towards reference values, separating correlations in calm and stressed markets (VIX, MOVE and credit spread), and validating the model against what happens next.
+Still to come: shrinking the estimates towards reference values, separating correlations in calm and stressed markets (VIX, MOVE and credit spread), and validating the model against what happens next.
 
 ### B. Design decisions
 
